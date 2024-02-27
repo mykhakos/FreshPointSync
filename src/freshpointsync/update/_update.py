@@ -396,7 +396,7 @@ class ProductCacheUpdater:
     def create_product(
         self, product: Product, **kwargs: typing.Any
     ) -> None:
-        self.products[product.id] = product
+        self.products[product.product_id] = product
         self._publisher.post(
             event=ProductUpdateEvent.PRODUCT_ADDED,
             product_new=product,
@@ -407,7 +407,7 @@ class ProductCacheUpdater:
     def delete_product(
         self, product: Product, **kwargs: typing.Any
     ) -> None:
-        del self.products[product.id]
+        del self.products[product.product_id]
         self._publisher.post(
             event=ProductUpdateEvent.PRODUCT_REMOVED,
             product_new=None,
@@ -418,9 +418,9 @@ class ProductCacheUpdater:
     def update_product(
         self, product: Product, product_cached: Product, **kwargs: typing.Any
     ) -> None:
-        self.products[product.id] = product
+        self.products[product.product_id] = product
         events: list[ProductUpdateEvent] = [ProductUpdateEvent.PRODUCT_UPDATED]
-        if product.count != product_cached.count:
+        if product.quantity != product_cached.quantity:
             events.append(ProductUpdateEvent.STOCK_UPDATED)
         if (
             product.price_full != product_cached.price_full or
@@ -442,7 +442,7 @@ class ProductCacheUpdater:
         await_handlers: bool = False,
         **kwargs: typing.Any
     ) -> None:
-        products_mapping = {p.id: p for p in products}
+        products_mapping = {p.product_id: p for p in products}
         # check if any product is not listed anymore
         for id_number, product in self.products.items():
             if id_number not in products_mapping:
@@ -460,4 +460,4 @@ class ProductCacheUpdater:
 
     def update_silently(self, products: typing.Iterable[Product]) -> None:
         self.products.clear()
-        self.products.update({p.id: p for p in products})
+        self.products.update({p.product_id: p for p in products})

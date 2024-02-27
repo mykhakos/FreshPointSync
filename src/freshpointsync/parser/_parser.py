@@ -336,12 +336,12 @@ class ProductPageHTMLParser:
         """
         price_full, price_curr = ProductHTMLParser.find_price(product_data)
         return Product(
-            id=ProductHTMLParser.find_id(product_data),
+            product_id=ProductHTMLParser.find_id(product_data),
             name=ProductHTMLParser.find_name(product_data),
             category=ProductHTMLParser.find_category(product_data),
             is_vegetarian=ProductHTMLParser.find_is_vegetarian(product_data),
             is_gluten_free=ProductHTMLParser.find_is_gluten_free(product_data),
-            count=ProductHTMLParser.find_count(product_data),
+            quantity=ProductHTMLParser.find_count(product_data),
             price_curr=price_curr,
             price_full=price_full,
             pic_url=ProductHTMLParser.find_pic_url(product_data),

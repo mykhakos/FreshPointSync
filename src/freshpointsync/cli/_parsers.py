@@ -311,7 +311,7 @@ def get_constaints(
         constaints.append(lambda p: format_str(category) in p.category_ascii)
     if args.quantity:
         quantity_operator, quantity = args.quantity
-        constaints.append(lambda p: quantity_operator(p.count, quantity))
+        constaints.append(lambda p: quantity_operator(p.quantity, quantity))
     if args.price:
         price_operator, price = args.price
         constaints.append(lambda p: price_operator(p.price_curr, price))

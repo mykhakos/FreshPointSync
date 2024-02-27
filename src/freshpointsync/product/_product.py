@@ -22,7 +22,7 @@ def get_default_pic_url() -> str:
 
 
 PRICE_NOT_SET = -1
-"""Sentinal value to flag that the price argument has not been provided."""
+"""Sentinel value to flag that the price argument has not been provided."""
 
 
 @dataclass(frozen=True)
@@ -31,8 +31,8 @@ class Product:
     Represents a FreshPoint webpage product with various attributes.
 
     Args:
-        id (int):
-            Unique identifier or the product. Mandatory argument.
+        product_id (int):
+            Unique identifier or the product.
         name (str):
             Name of the product. Defaults to an empty string value.
         category (str):
@@ -58,7 +58,7 @@ class Product:
         timestamp (int):
             Timestamp of product creation, auto-generated.
     """
-    id: int
+    product_id: int
     """Unique identifier or the product."""
     name: str = field(default='')
     """Name of the product."""
@@ -68,7 +68,7 @@ class Product:
     """Indicates if the product is vegetarian."""
     is_gluten_free: bool = field(default=False)
     """Indicates if the product is gluten-free."""
-    count: int = field(default=0)
+    quantity: int = field(default=0)
     """Quantity of product items in stock."""
     price_full: float = field(default=PRICE_NOT_SET)
     """Full price of the product."""
@@ -133,21 +133,21 @@ class Product:
         """
         A product is considered available if its count is greater than zero.
         """
-        return self.count != 0
+        return self.quantity != 0
 
     @cached_property
     def is_sold_out(self) -> bool:
         """
         A product is considered available if its count equals zero.
         """
-        return self.count == 0
+        return self.quantity == 0
 
     @cached_property
     def is_last_piece(self) -> bool:
         """
         Indicates whether only one piece of the product is left in stock.
         """
-        return self.count == 1
+        return self.quantity == 1
 
     def is_newer(self, other: 'Product') -> bool:
         """
@@ -260,16 +260,16 @@ class Product:
                 It provides insights into changes in stock quantity, such as
                 decreases, increases, depletion, or restocking.
         """
-        if self.count > new.count:
-            decrease = self.count - new.count
+        if self.quantity > new.quantity:
+            decrease = self.quantity - new.quantity
             increase = 0
-            depleted = new.count == 0
+            depleted = new.quantity == 0
             restocked = False
-        elif self.count < new.count:
+        elif self.quantity < new.quantity:
             decrease = 0
-            increase = new.count - self.count
+            increase = new.quantity - self.quantity
             depleted = False
-            restocked = self.count == 0
+            restocked = self.quantity == 0
         else:
             decrease = 0
             increase = 0

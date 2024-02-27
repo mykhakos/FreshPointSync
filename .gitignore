@@ -1,3 +1,8 @@
+# Library-specific files
+.history
+default_query.json
+settings.json
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

@@ -68,7 +68,7 @@ class QueryResultTable:
             style = Style(color=HexColorPallete.YELLOW.value)
         else:
             style = Style(color=HexColorPallete.FRESHPOINT_VIBRANT.value)
-        return Text(str(product.count), style=style)
+        return Text(str(product.quantity), style=style)
 
     def add_row(self, product: Product, end_section: bool = False) -> None:
         padding = (0, 0, 0, 0) if end_section else (0, 0, 1, 0)  # t, r, b, l

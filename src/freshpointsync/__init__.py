@@ -1,7 +1,7 @@
 from .page._page import FreshPointProductPage, FreshPointProductPageHub
 from .product._product import Product
 from .update._update import ProductUpdateEvent
-from . import client, page, parser, product, update, cli
+from . import client, page, parser, product, update
 
 
 __all__ = [
@@ -14,5 +14,4 @@ __all__ = [
     'parser',
     'product',
     'update',
-    'cli'
     ]

@@ -1,9 +1,10 @@
 import time
 import pytest
 
-from ._freshpoint_sync import (
-    Product, ProductPriceUpdateInfo, ProductStockUpdateInfo, collect_props
+from freshpointsync.product import (
+    Product, ProductPriceUpdateInfo, ProductStockUpdateInfo
 )
+from freshpointsync.product._product import collect_props
 
 
 def test_collect_props() -> None:
@@ -41,7 +42,7 @@ def test_collect_props() -> None:
         ),
         (
             Product(123),
-            Product(123, name='123'),
+            Product(123, name=''),
         ),
     ]
 )
@@ -93,7 +94,7 @@ def test_discount_rate(prod: Product, rate: float):
 
 def test_is_immutable():
     with pytest.raises(AttributeError):
-        Product('foo', 123).id_number = 321
+        Product('foo', 123).product_id = 321
 
 
 def test_is_newer():
@@ -105,54 +106,64 @@ def test_is_newer():
 
 def test_as_dict():
     prod = Product(
-        id_number=123,
+        product_id=123,
         name='foo',
         category='bar',
         is_vegetarian=True,
         is_gluten_free=False,
-        count=5,
+        quantity=5,
         price_full=10,
         price_curr=5,
-        pic_url='url'
+        pic_url='url',
+        location_id=321,
+        location_name='loc'
         )
     assert prod.as_dict() == {
-        'id_number': 123,
+        'product_id': 123,
         'name': 'foo',
         'category': 'bar',
         'is_vegetarian': True,
         'is_gluten_free': False,
-        'count': 5,
-        'price_full': 10,
-        'price_curr': 5,
-        'pic_url': 'url'
-    }
-    assert prod.as_dict(include_timestamp=True) == {
-        'id_number': 123,
-        'name': 'foo',
-        'category': 'bar',
-        'is_vegetarian': True,
-        'is_gluten_free': False,
-        'count': 5,
+        'quantity': 5,
         'price_full': 10,
         'price_curr': 5,
         'pic_url': 'url',
+        'location_id': 321,
+        'location_name': 'loc'
+    }
+    assert prod.as_dict(include_timestamp=True) == {
+        'product_id': 123,
+        'name': 'foo',
+        'category': 'bar',
+        'is_vegetarian': True,
+        'is_gluten_free': False,
+        'quantity': 5,
+        'price_full': 10,
+        'price_curr': 5,
+        'pic_url': 'url',
+        'location_id': 321,
+        'location_name': 'loc',
         'timestamp': prod.timestamp
     }
     assert prod.as_dict(include_properties=True) == {
-        'id_number': 123,
+        'product_id': 123,
         'name': 'foo',
         'category': 'bar',
         'is_vegetarian': True,
         'is_gluten_free': False,
-        'count': 5,
+        'quantity': 5,
         'price_full': 10,
         'price_curr': 5,
         'pic_url': 'url',
+        'location_id': 321,
+        'location_name': 'loc',
         'discount_rate': 0.5,
         'is_on_sale': True,
         'is_available': True,
         'is_sold_out': False,
-        'is_last_piece': False
+        'is_last_piece': False,
+        'name_ascii': 'foo',
+        'category_ascii': 'bar'
     }
 
 
@@ -160,14 +171,14 @@ def test_as_dict():
     "prod_1, prod_2, diff, diff_props",
     [
         (
-            Product(123, count=4, price_full=10),
-            Product(123, count=4, price_full=10),
+            Product(123, quantity=4, price_full=10),
+            Product(123, quantity=4, price_full=10),
             {},
             {}
         ),
         (
-            Product(123, count=4, price_full=10, price_curr=10),
-            Product(123, count=4, price_full=10, price_curr=5),
+            Product(123, quantity=4, price_full=10, price_curr=10),
+            Product(123, quantity=4, price_full=10, price_curr=5),
             {'price_curr': (10, 5)},
             {
                 'price_curr': (10, 5),
@@ -176,8 +187,8 @@ def test_as_dict():
             }
         ),
         (
-            Product(123, count=4, price_full=10, price_curr=5),
-            Product(123, count=4, price_full=10, price_curr=10),
+            Product(123, quantity=4, price_full=10, price_curr=5),
+            Product(123, quantity=4, price_full=10, price_curr=10),
             {'price_curr': (5, 10)},
             {
                 'price_curr': (5, 10),
@@ -186,29 +197,30 @@ def test_as_dict():
             }
         ),
         (
-            Product(123, count=5, price_full=10, price_curr=10),
-            Product(123, count=0, price_full=10, price_curr=10),
-            {'count': (5, 0)},
+            Product(123, quantity=5, price_full=10, price_curr=10),
+            Product(123, quantity=0, price_full=10, price_curr=10),
+            {'quantity': (5, 0)},
             {
-                'count': (5, 0),
+                'quantity': (5, 0),
                 'is_sold_out': (False, True),
                 'is_available': (True, False)
             },
         ),
         (
-            Product(123, name='foo', count=0, price_full=5),
-            Product(321, name='bar', count=5, price_full=10),
+            Product(123, name='foo', quantity=0, price_full=5),
+            Product(321, name='bar', quantity=5, price_full=10),
             {
-                'id_number': (123, 321),
+                'product_id': (123, 321),
                 'name': ('foo', 'bar'),
-                'count': (0, 5),
+                'quantity': (0, 5),
                 'price_full': (5, 10),
                 'price_curr': (5, 10)
             },
             {
-                'id_number': (123, 321),
+                'product_id': (123, 321),
                 'name': ('foo', 'bar'),
-                'count': (0, 5),
+                'name_ascii': ('foo', 'bar'),
+                'quantity': (0, 5),
                 'price_full': (5, 10),
                 'price_curr': (5, 10),
                 'is_sold_out': (True, False),
@@ -236,8 +248,8 @@ def test_diff(prod_1: Product, prod_2: Product, diff: dict, diff_props: dict):
             )
         ),
         (
-            Product(123, count=4, price_full=10),
-            Product(123, count=4, price_full=10),
+            Product(123, quantity=4, price_full=10),
+            Product(123, quantity=4, price_full=10),
             ProductStockUpdateInfo(
                 stock_decrease=0,
                 stock_increase=0,
@@ -246,8 +258,8 @@ def test_diff(prod_1: Product, prod_2: Product, diff: dict, diff_props: dict):
             )
         ),
         (
-            Product(123, count=4, price_full=10, price_curr=10),
-            Product(123, count=4, price_full=10, price_curr=5),
+            Product(123, quantity=4, price_full=10, price_curr=10),
+            Product(123, quantity=4, price_full=10, price_curr=5),
             ProductStockUpdateInfo(
                 stock_decrease=0,
                 stock_increase=0,
@@ -256,8 +268,8 @@ def test_diff(prod_1: Product, prod_2: Product, diff: dict, diff_props: dict):
             )
         ),
         (
-            Product(123, count=0, price_full=10, price_curr=10),
-            Product(123, count=0, price_full=10, price_curr=10),
+            Product(123, quantity=0, price_full=10, price_curr=10),
+            Product(123, quantity=0, price_full=10, price_curr=10),
             ProductStockUpdateInfo(
                 stock_decrease=0,
                 stock_increase=0,
@@ -266,8 +278,8 @@ def test_diff(prod_1: Product, prod_2: Product, diff: dict, diff_props: dict):
             )
         ),
         (
-            Product(123, count=5),
-            Product(123, count=2),
+            Product(123, quantity=5),
+            Product(123, quantity=2),
             ProductStockUpdateInfo(
                 stock_decrease=3,
                 stock_increase=0,
@@ -276,8 +288,8 @@ def test_diff(prod_1: Product, prod_2: Product, diff: dict, diff_props: dict):
             )
         ),
         (
-            Product(123, count=2),
-            Product(123, count=0),
+            Product(123, quantity=2),
+            Product(123, quantity=0),
             ProductStockUpdateInfo(
                 stock_decrease=2,
                 stock_increase=0,
@@ -286,8 +298,8 @@ def test_diff(prod_1: Product, prod_2: Product, diff: dict, diff_props: dict):
             )
         ),
         (
-            Product(123, count=0),
-            Product(123, count=2),
+            Product(123, quantity=0),
+            Product(123, quantity=2),
             ProductStockUpdateInfo(
                 stock_decrease=0,
                 stock_increase=2,
@@ -296,8 +308,8 @@ def test_diff(prod_1: Product, prod_2: Product, diff: dict, diff_props: dict):
             )
         ),
         (
-            Product(123, count=2),
-            Product(123, count=5),
+            Product(123, quantity=2),
+            Product(123, quantity=5),
             ProductStockUpdateInfo(
                 stock_decrease=0,
                 stock_increase=3,
@@ -329,8 +341,8 @@ def test_compare_stock(prod_1: Product, prod_2: Product, info):
             )
         ),
         (
-            Product(123, count=4, price_full=10, price_curr=10),
-            Product(123, count=8, price_full=10, price_curr=10),
+            Product(123, quantity=4, price_full=10, price_curr=10),
+            Product(123, quantity=8, price_full=10, price_curr=10),
             ProductPriceUpdateInfo(
                 price_full_decrease=0,
                 price_full_increase=0,

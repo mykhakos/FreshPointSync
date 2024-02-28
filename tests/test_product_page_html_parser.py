@@ -2,7 +2,8 @@ import bs4
 import os
 import pytest
 
-from ._freshpoint_sync import ProductPageHTMLParser, Product
+from freshpointsync.product import Product
+from freshpointsync.parser import ProductPageHTMLParser
 
 
 @pytest.fixture(scope='module')
@@ -16,14 +17,6 @@ def product_page_html_text():
 @pytest.fixture(scope='module')
 def product_page_html_parser(product_page_html_text: str):
     yield ProductPageHTMLParser(product_page_html_text)
-
-
-def test_update_data(product_page_html_text: str):
-    parser = ProductPageHTMLParser()
-    contents = parser._bs4_parser.contents
-    assert contents == []
-    parser.update_data(product_page_html_text)
-    assert parser._bs4_parser.contents != contents
 
 
 @pytest.mark.parametrize(
@@ -107,7 +100,7 @@ def test_find_product_valid(
         prod_name_input, prod_id_input
         )
     assert prod.name == prod_name_output
-    assert prod.id_number == prod_id_output
+    assert prod.product_id == prod_id_output
 
 
 @pytest.mark.parametrize(
@@ -140,11 +133,11 @@ def test_find_product_invalid(
     [
         Product(
             name="BIO Zahradní limonáda bezový květ & meduňka",
-            id_number=1419,
+            product_id=1419,
             category="Nápoje",
             is_vegetarian=False,
             is_gluten_free=False,
-            count=5,
+            quantity=5,
             price_full=36.9,
             price_curr=36.9,
             pic_url=(
@@ -155,11 +148,11 @@ def test_find_product_invalid(
         ),
         Product(
             name="Vepřový guláš, brambory",
-            id_number=806,
+            product_id=806,
             category="Hlavní jídla",
             is_vegetarian=False,
             is_gluten_free=False,
-            count=1,
+            quantity=1,
             price_full=87.9,
             price_curr=87.9,
             pic_url=(
@@ -170,11 +163,11 @@ def test_find_product_invalid(
         ),
         Product(
             name="Batátové chilli, basmati rýže",
-            id_number=1335,
+            product_id=1335,
             category="Hlavní jídla",
             is_vegetarian=True,
             is_gluten_free=False,
-            count=0,
+            quantity=0,
             price_full=119.9,
             price_curr=119.9,
             pic_url=(
@@ -188,11 +181,11 @@ def test_find_product_invalid(
                 "Vepřové výpečky s kysaným zelím a variací knedlíků "
                 "(karlovarský a bramborový)"
                 ),
-            id_number=990,
+            product_id=990,
             category="Hlavní jídla",
             is_vegetarian=False,
             is_gluten_free=False,
-            count=0,
+            quantity=0,
             price_full=119.9,
             price_curr=101.9,
             pic_url=(
@@ -206,8 +199,8 @@ def test_find_product_invalid(
 def test_parse_product_data(
     product: Product, product_page_html_parser: ProductPageHTMLParser
 ):
-    parsed = product_page_html_parser.find_product(id=product.id_number)
-    assert parsed.id_number == product.id_number
+    parsed = product_page_html_parser.find_product(id=product.product_id)
+    assert parsed.product_id == product.product_id
     assert parsed.name == product.name
     assert parsed.category == product.category
     assert parsed.is_vegetarian == product.is_vegetarian

@@ -383,7 +383,7 @@ class FreshPointProductPageHub:
             func = self._pages[page_id]._parse_contents_blocking
             tasks.append(self._runner.run_sync(func, page_contents))
         results: list[list[Product]] = await asyncio.gather(*tasks)
-        return dict(zip(self._pages.keys(), results))
+        return dict(zip(contents.keys(), results))
 
     async def update_silently(self) -> None:
         contents = await self._fetch_contents()

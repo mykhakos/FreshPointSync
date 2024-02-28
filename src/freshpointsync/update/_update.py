@@ -374,12 +374,12 @@ class ProductUpdateEventPublisher:
         for event in events:
             if event in self.async_subscribers:
                 if context is None:
-                    context = self.get_context(old, new, **kwargs)
+                    context = self.get_context(new, old, **kwargs)
                 for async_sub in self.async_subscribers[event]:
                     self.runner.run_async(async_sub(context))
             if event in self.sync_subscribers:
                 if context is None:
-                    context = self.get_context(old, new, **kwargs)
+                    context = self.get_context(new, old, **kwargs)
                 for sync_sub in self.sync_subscribers[event]:
                     self.runner.run_sync(sync_sub, context)
 

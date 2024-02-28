@@ -249,7 +249,7 @@ class ProductPageHTMLParser:
         if self._page_id is not None:
             return self._page_id
         script_tag = self._bs4_parser.find(
-            'script', text=re.compile('deviceId')
+            'script', string=re.compile('deviceId')
             )
         if script_tag:
             script_text = script_tag.get_text()

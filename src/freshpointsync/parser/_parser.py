@@ -15,7 +15,8 @@ logger = logging.getLogger("freshpointsync.parser")
 def normalize_text(text: typing.Any) -> str:
     """
     Normalize the given text by removing diacritics, leading/trailing
-    whitespace, and converting it to lowercase.
+    whitespace, and converting it to lowercase. Non-string values are
+    converted to strings. `None` values are converted to empty strings.
 
     Args:
         text (typing.Any): The text to be normalized.
@@ -23,7 +24,9 @@ def normalize_text(text: typing.Any) -> str:
     Returns:
         str: The normalized text.
     """
-    return unidecode(str(text).strip().casefold())
+    if text is None:
+        return ""
+    return unidecode(str(text).strip()).casefold()
 
 
 T = typing.TypeVar('T')

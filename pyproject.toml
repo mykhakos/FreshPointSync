@@ -1,17 +1,35 @@
 [project]
-name = "freshpoint_sync"
+name = "freshpointsync"
 version = "0.1.0"
-description = "Freshpoint.cz web page data syncer"
+description = "Freshpoint.cz web page data parser and syncer."
 readme = "README.md"
 license = {file = "LICENSE"}
 authors = [
   { name = "Konstantin Mykhailov", email = "constantinemykhailov@gmail.com" },
 ]
 classifiers = [
-    "Programming Language :: Python :: 3",
+    "Development Status :: 3 - Alpha",
+    "Framework :: aiohttp",
+    "Framework :: AsyncIO",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Other Audience",
     "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Natural Language :: Czech",
     "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Text Processing :: Markup :: HTML",
+    "Typing :: Typed"
 ]
+keywords = ["freshpoint", "freshpoint.cz"]
 requires-python = ">=3.8"
 dependencies = [
     "aiohttp",
@@ -20,11 +38,21 @@ dependencies = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/mykhakos/FreshPointSync.git"
+"Homepage" = "https://github.com/mykhakos/FreshPointSync"
+
+[project.optional-dependencies]
+docs = [
+  "sphinx",
+  "sphinx_rtd_theme",
+]
+test = [
+  "pytest",
+  "pytest-asyncio",
+]
 
 [options]
 package_dir = {"" = "src"}
 
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools"]
 build-backend = "setuptools.build_meta"

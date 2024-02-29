@@ -1,6 +1,8 @@
 import time
 import pytest
 
+from dataclasses import asdict
+
 from freshpointsync.product import (
     Product, ProductPriceUpdateInfo, ProductStockUpdateInfo
 )
@@ -28,9 +30,40 @@ def test_collect_props() -> None:
         def _hidden_prop(self) -> bool:
             return True
 
-    props = ('class_var_plus_one', 'inst_var_plus_one')
-    assert collect_props(Foo) == props
-    assert collect_props(type(Foo())) == props
+    class Bar(Foo):
+        child_class_var: int = 4
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.child_inst_var: int = 5
+            self._hidden_child_inst_var: int = 6
+
+        @property
+        def child_class_var_plus_one(self) -> float:
+            return self.child_class_var + 1
+
+        @property
+        def _hidden_child_prop(self) -> bool:
+            return False
+
+    props_foo = (
+        'class_var_plus_one', 'inst_var_plus_one'
+        )
+    props_foo_private = (
+        '_hidden_prop', 'class_var_plus_one', 'inst_var_plus_one'
+        )
+    props_bar = (
+        'child_class_var_plus_one', 'class_var_plus_one', 'inst_var_plus_one'
+        )
+    props_bar_private = (
+        '_hidden_child_prop', '_hidden_prop', 'child_class_var_plus_one',
+        'class_var_plus_one', 'inst_var_plus_one'
+        )
+    assert collect_props(type(Foo())) == props_foo
+    assert collect_props(Foo) == props_foo
+    assert collect_props(Foo, include_private=True) == props_foo_private
+    assert collect_props(Bar) == props_bar
+    assert collect_props(Bar, include_private=True) == props_bar_private
 
 
 @pytest.mark.parametrize(
@@ -101,7 +134,7 @@ def test_is_newer():
     prod_1 = Product(123)
     time.sleep(0.001)
     prod_2 = Product(123)
-    assert prod_2.is_newer(prod_1)
+    assert prod_2.is_newer_than(prod_1)
 
 
 def test_as_dict():
@@ -162,8 +195,8 @@ def test_as_dict():
         'is_available': True,
         'is_sold_out': False,
         'is_last_piece': False,
-        'name_ascii': 'foo',
-        'category_ascii': 'bar'
+        'name_lowercase_ascii': 'foo',
+        'category_lowercase_ascii': 'bar'
     }
 
 
@@ -219,7 +252,7 @@ def test_as_dict():
             {
                 'product_id': (123, 321),
                 'name': ('foo', 'bar'),
-                'name_ascii': ('foo', 'bar'),
+                'name_lowercase_ascii': ('foo', 'bar'),
                 'quantity': (0, 5),
                 'price_full': (5, 10),
                 'price_curr': (5, 10),
@@ -232,6 +265,65 @@ def test_as_dict():
 def test_diff(prod_1: Product, prod_2: Product, diff: dict, diff_props: dict):
     assert prod_1.diff(prod_2, include_properties=False) == diff
     assert prod_1.diff(prod_2, include_properties=True) == diff_props
+
+
+@pytest.mark.parametrize(
+    "stock_decrease, stock_increase, stock_depleted, stock_restocked",
+    [
+        (0, 0, False, False,),
+        (0, 10, False, True,),
+        (0, 5, True, False,)
+    ],
+)
+def test_product_stock_update_info(
+    stock_decrease, stock_increase, stock_depleted, stock_restocked
+):
+    update_info = ProductStockUpdateInfo(
+        stock_decrease=stock_decrease,
+        stock_increase=stock_increase,
+        stock_depleted=stock_depleted,
+        stock_restocked=stock_restocked,
+    )
+    assert update_info.as_dict() == asdict(update_info)
+
+
+@pytest.mark.parametrize(
+    """
+    price_full_decrease,
+    price_full_increase,
+    price_curr_decrease,
+    price_curr_increase,
+    discount_rate_decrease,
+    discount_rate_increase,
+    sale_started,
+    sale_ended""",
+    [
+        (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, False, False),
+        (0.0, 15.0, 5.0, 0.0, 0.05, 0.0, True, False),
+        (0.0, 0.0, 0.0, 0.0, 0.0, 0.1, False, False)
+    ]
+)
+def test_product_price_update_info(
+    price_full_decrease,
+    price_full_increase,
+    price_curr_decrease,
+    price_curr_increase,
+    discount_rate_decrease,
+    discount_rate_increase,
+    sale_started,
+    sale_ended
+):
+    update_info = ProductPriceUpdateInfo(
+        price_full_decrease=price_full_decrease,
+        price_full_increase=price_full_increase,
+        price_curr_decrease=price_curr_decrease,
+        price_curr_increase=price_curr_increase,
+        discount_rate_decrease=discount_rate_decrease,
+        discount_rate_increase=discount_rate_increase,
+        sale_started=sale_started,
+        sale_ended=sale_ended,
+    )
+    assert update_info.as_dict() == asdict(update_info)
 
 
 @pytest.mark.parametrize(

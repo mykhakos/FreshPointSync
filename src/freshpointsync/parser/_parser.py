@@ -162,6 +162,10 @@ class ProductHTMLParser:
 
     @classmethod
     def _find_id_safe(cls, product_data: bs4.Tag) -> str:
+        """
+        Extract the product ID number from the given product data. If the ID
+        is not found, catch the raised exception and return a placeholder.
+        """
         try:
             return str(cls.find_id(product_data))
         except Exception as e:
@@ -175,13 +179,28 @@ class ProductHTMLParser:
     def _run_converter(
         cls, converter: typing.Callable[[], T], product_data: bs4.Tag
     ) -> T:
+        """
+        Run the given converter function and return the converted value.
+
+        Args:
+            converter (typing.Callable[[], T]): The converter function
+            to be executed.
+            product_data (bs4.Tag): The product data to be passed to
+            the converter function.
+
+        Returns:
+            T: The converted value.
+
+        Raises:
+            ValueError: If an error occurs during the conversion process.
+        """
         try:
             return converter()
-        except Exception as e:
+        except Exception as exc:
             raise ValueError(
                 f'Unable to convert a parsed value for the product '
                 f'"id={cls._find_id_safe(product_data)}".'
-                ) from e
+                ) from exc
 
     @classmethod
     def find_quantity(cls, product_data: bs4.Tag) -> int:

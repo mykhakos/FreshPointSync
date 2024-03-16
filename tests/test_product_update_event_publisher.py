@@ -33,12 +33,19 @@ def async_handler() -> AsyncMock:
     return new_async_handler()
 
 
+def handler_callback(fut):
+    pass
+
+
 def test_subscribe_sync(sync_handler):
     publisher = ProductUpdateEventPublisher()
     event = ProductUpdateEvent.PRODUCT_ADDED
     publisher.subscribe(event, sync_handler)
     assert event not in publisher.async_subscribers
-    assert sync_handler in publisher.sync_subscribers[event]
+    handler_data = publisher.sync_subscribers[event][0]
+    assert sync_handler == handler_data.handler
+    assert handler_data.exec_params.call_safe is True
+    assert handler_data.exec_params.done_callback is None
     sync_handler.assert_not_called()
 
 
@@ -47,7 +54,27 @@ def test_subscribe_async(async_handler):
     event = ProductUpdateEvent.PRODUCT_ADDED
     publisher.subscribe(event, async_handler)
     assert event not in publisher.sync_subscribers
-    assert async_handler in publisher.async_subscribers[event]
+    handler_data = publisher.async_subscribers[event][0]
+    assert async_handler == handler_data.handler
+    assert handler_data.exec_params.call_safe is True
+    assert handler_data.exec_params.done_callback is None
+    async_handler.assert_not_called()
+
+
+def test_subscribe_with_params(async_handler):
+    publisher = ProductUpdateEventPublisher()
+    event = ProductUpdateEvent.PRODUCT_ADDED
+    publisher.subscribe(
+        event,
+        async_handler,
+        call_safe=False,
+        handler_done_callback=handler_callback
+        )
+    assert event not in publisher.sync_subscribers
+    handler_data = publisher.async_subscribers[event][0]
+    assert async_handler == handler_data.handler
+    assert handler_data.exec_params.call_safe is False
+    assert handler_data.exec_params.done_callback is handler_callback
     async_handler.assert_not_called()
 
 
@@ -56,28 +83,73 @@ def test_subscribe_same_twice(async_handler):
     publisher.subscribe(ProductUpdateEvent.PRODUCT_ADDED, async_handler)
     publisher.subscribe(ProductUpdateEvent.PRODUCT_ADDED, async_handler)
     subscribers = publisher.async_subscribers[ProductUpdateEvent.PRODUCT_ADDED]
-    assert subscribers.count(async_handler) == 1
+    assert len([s for s in subscribers if s.handler is async_handler]) == 1
+
+
+def test_is_subscribed(sync_handler):
+    publisher = ProductUpdateEventPublisher()
+    event = ProductUpdateEvent.PRODUCT_ADDED
+    assert publisher.is_subscribed(event) is False
+    publisher.subscribe(event, sync_handler)
+    assert publisher.is_subscribed(event) is True
 
 
 def test_unsubscribe_subscribed(async_handler):
     publisher = ProductUpdateEventPublisher()
     assert ProductUpdateEvent.PRODUCT_ADDED not in publisher.async_subscribers
+    assert publisher.is_subscribed(ProductUpdateEvent.PRODUCT_ADDED) is False
     publisher.subscribe(ProductUpdateEvent.PRODUCT_ADDED, async_handler)
-    subscribers = publisher.async_subscribers[ProductUpdateEvent.PRODUCT_ADDED]
-    assert async_handler in subscribers
+    assert publisher.is_subscribed(ProductUpdateEvent.PRODUCT_ADDED) is True
     publisher.unsubscribe(ProductUpdateEvent.PRODUCT_ADDED, async_handler)
-    assert async_handler not in subscribers
+    assert publisher.is_subscribed(ProductUpdateEvent.PRODUCT_ADDED) is False
 
 
 def test_unsubscribe_unsubscribed(async_handler):
     publisher = ProductUpdateEventPublisher()
     assert ProductUpdateEvent.PRODUCT_ADDED not in publisher.async_subscribers
+    assert publisher.is_subscribed(ProductUpdateEvent.PRODUCT_ADDED) is False
     publisher.unsubscribe(ProductUpdateEvent.PRODUCT_ADDED, async_handler)
     assert ProductUpdateEvent.PRODUCT_ADDED not in publisher.async_subscribers
+    assert publisher.is_subscribed(ProductUpdateEvent.PRODUCT_ADDED) is False
+
+
+def test_unsubscribe_all():
+    publisher = ProductUpdateEventPublisher()
+    event = ProductUpdateEvent.PRODUCT_ADDED
+    publisher.subscribe(event, new_async_handler())
+    publisher.subscribe(event, new_async_handler())
+    publisher.subscribe(event, new_sync_handler())
+    publisher.subscribe(event, new_sync_handler())
+    assert publisher.is_subscribed(event) is True
+    publisher.unsubscribe(event, None)
+    assert publisher.is_subscribed(event) is False
+
+
+def test_unsubscribe_all_empty():
+    publisher = ProductUpdateEventPublisher()
+    event = ProductUpdateEvent.PRODUCT_ADDED
+    assert publisher.is_subscribed(event) is False
+    publisher.unsubscribe(event, None)
+    assert publisher.is_subscribed(event) is False
 
 
 @pytest.mark.asyncio
-async def test_post_no_sunscriptions():
+async def test_subscribe_and_post_and_unsubscribe(async_handler):
+    publisher = ProductUpdateEventPublisher()
+    event = ProductUpdateEvent.PRODUCT_ADDED
+    publisher.subscribe(event, async_handler)
+    product_new = Product('foo', 123)
+    product_old = None
+    publisher.post(event, product_new, product_old)
+    async_handler.assert_called_once()
+    async_handler.reset_mock()
+    publisher.unsubscribe(event, async_handler)
+    publisher.post(event, product_new, product_old)
+    async_handler.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_post_no_bscriptions():
     publisher = ProductUpdateEventPublisher()
     publisher.post(ProductUpdateEvent.PRODUCT_ADDED, None, None)
 

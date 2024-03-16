@@ -120,7 +120,7 @@ class FreshPointProductPage:
             return contents
 
         is_updated: bool = False
-        contents = await self._runner.run_async(fetch())
+        contents = await self._runner.run_async(fetch)
         if contents is None:
             return '', is_updated
         if contents != self._html:
@@ -363,7 +363,7 @@ class FreshPointProductPageHub:
     async def _fetch_contents(self) -> dict[int, tuple[str, bool]]:
         tasks: list[asyncio.Task] = []
         for page in self._pages.values():
-            tasks.append(self._runner.run_async(page._fetch_contents()))
+            tasks.append(self._runner.run_async(page._fetch_contents))
         results: list[tuple[str, bool]] = await asyncio.gather(*tasks)
         return dict(zip(self._pages.keys(), results))
 
@@ -378,7 +378,7 @@ class FreshPointProductPageHub:
     async def _parse_contents(
         self, contents: dict[int, str]
     ) -> dict[int, list[Product]]:
-        tasks: list[asyncio.Task] = []
+        tasks: list[asyncio.Future] = []
         for page_id, page_contents in contents.items():
             func = self._pages[page_id]._parse_contents_blocking
             tasks.append(self._runner.run_sync(func, page_contents))
@@ -406,9 +406,11 @@ class FreshPointProductPageHub:
             page = self._pages[page_id]
             page_contents = contents_to_update[page_id]
             task = self._runner.run_async(
-                page._update(
-                    page_contents, page_products, await_handlers, **kwargs
-                    )
+                page._update,
+                page_contents,
+                page_products,
+                await_handlers,
+                **kwargs
                 )
             tasks.append(task)
         await asyncio.gather(*tasks)

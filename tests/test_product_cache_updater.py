@@ -56,7 +56,7 @@ def cache_updater_with_handlers() -> tuple[ProductCacheUpdater, Handlers]:
         ProductUpdateEvent.PRODUCT_ADDED, handlers.handler_add
         )
     publisher.subscribe(
-        ProductUpdateEvent.PRODUCT_DELETED, handlers.handler_delete
+        ProductUpdateEvent.PRODUCT_REMOVED, handlers.handler_delete
         )
     publisher.subscribe(
         ProductUpdateEvent.PRODUCT_UPDATED, handlers.handler_update

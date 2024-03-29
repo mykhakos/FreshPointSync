@@ -37,6 +37,12 @@ def products():
 @pytest.mark.usefixtures("products")
 class TestProductFinder:
 
+    def test_product_matches(self, products):
+        matches = ProductFinder.product_matches(products[0], name='orange')
+        assert matches
+        not_matches = ProductFinder.product_matches(products[0], name='apple')
+        assert not not_matches
+
     def test_find_product_by_name(self, products):
         product = ProductFinder.find_product(products, name='apple')
         assert product and product.product_id == 3

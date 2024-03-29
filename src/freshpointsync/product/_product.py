@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import time
 import typing
 
@@ -6,43 +8,14 @@ from functools import cached_property
 from unidecode import unidecode
 
 
-def collect_props(
-    obj_type: typing.Type[object], include_private: bool = False
-) -> tuple[str, ...]:
-    """
-    Collect names of the methods of the given object type decorated with
-    `@property` and `@cached_property`.
-
-    Args:
-        obj_type (typing.Type[object]):
-        The type of object to collect properties from.
-        include_private (bool):
-        If True, includes private properties. Defaults to False.
-
-    Returns:
-        tuple[str, ...]: A tuple containing the names of the properties.
-
-    """
-    return tuple(
-        prop for prop in dir(obj_type)
-        if isinstance(getattr(obj_type, prop), (property, cached_property)) and
-        (include_private or not prop.startswith('_'))
-        )
-
-
-def get_default_pic_url() -> str:
-    """
-    Returns the default picture URL for a product.
-    The URL points to an image hosted on the FreshPoint server.
-    """
-    return (
-        r"https://images.weserv.nl/?url=http://freshpoint.freshserver.cz/"
-        r"backend/web/media/photo/1_f587dd3fa21b22.jpg"
-        )
-
-
-PRICE_NOT_SET = -1
-"""Sentinel value to flag that the price argument has not been provided."""
+DEFAULT_PIC_URL = (
+    r"https://images.weserv.nl/?url=http://freshpoint.freshserver.cz/"
+    r"backend/web/media/photo/1_f587dd3fa21b22.jpg"
+)
+"""
+Default picture URL for a product.
+The URL points to an image hosted on the FreshPoint server.
+"""
 
 
 @dataclass(frozen=True)
@@ -76,7 +49,8 @@ class Product:
         location_name (str):
             Name of the product location. Defaults to an empty string value.
         timestamp (int):
-            Timestamp of the product creation, auto-generated.
+            Timestamp of the product instance initialization.
+            Defaults to the time of instantiation.
     """
     product_id: int
     """Unique identifier or the product."""
@@ -90,41 +64,28 @@ class Product:
     """Indicates if the product is gluten-free."""
     quantity: int = field(default=0)
     """Quantity of product items in stock."""
-    price_full: float = field(default=PRICE_NOT_SET)
+    price_full: float = field(default=None)  # type: ignore
     """Full price of the product."""
-    price_curr: float = field(default=PRICE_NOT_SET)
+    price_curr: float = field(default=None)  # type: ignore
     """Current selling price of the product."""
-    pic_url: str = field(default_factory=get_default_pic_url, repr=False)
+    pic_url: str = field(default=DEFAULT_PIC_URL)
     """URL of the product image."""
     location_id: int = field(default=0)
     """Unique identifier of the product page URL."""
     location_name: str = field(default='')
     """Name of the product location."""
-    timestamp: float = field(
-        default_factory=time.time, init=False, repr=False, compare=False
-        )
+    timestamp: float = field(default_factory=time.time, compare=False)
     """Timestamp of the product creation, auto-generated."""
 
     def __post_init__(self):
         # use object.__setattr__ to bypass the frozen restriction
-        if (
-            self.price_full == PRICE_NOT_SET and
-            self.price_curr == PRICE_NOT_SET
-        ):
+        if self.price_full is None and self.price_curr is None:
             object.__setattr__(self, 'price_full', 0.0)
             object.__setattr__(self, 'price_curr', 0.0)
-        elif self.price_curr == PRICE_NOT_SET:
-            object.__setattr__(self, 'price_curr', self.price_full)
-        elif self.price_full == PRICE_NOT_SET:
+        elif self.price_full is None and self.price_curr is not None:
             object.__setattr__(self, 'price_full', self.price_curr)
-
-    @cached_property
-    def _props(self) -> tuple[str, ...]:
-        """
-        Names of the methods of the object type decorated with
-        `@property` and `@cached_property`.
-        """
-        return collect_props(type(self), include_private=False)
+        elif self.price_curr is None and self.price_full is not None:
+            object.__setattr__(self, 'price_curr', self.price_full)
 
     @cached_property
     def name_lowercase_ascii(self) -> str:
@@ -175,42 +136,7 @@ class Product:
         """
         return self.quantity == 1
 
-    def as_dict(
-        self, include_timestamp: bool = False, include_properties: bool = False
-    ) -> dict[str, typing.Any]:
-        """
-        Get a dictionary representation of the product instance.
-
-        With `include_timestamp=True` and `include_properties=False`,
-        the behavior of this method mimics that of `dataclasses.asdict()`,
-        except private attributes (prefixed with an underscore '_') are
-        excluded from the resulting dictionary.
-
-        Args:
-            include_timestamp (bool):
-                If True, the creation timestamp is included.
-                Defaults to False.
-            include_properties (bool):
-                If True, computed property values are included.
-                Defaults to False.
-
-        Returns:
-            dict[str, typing.Any]:
-                A dictionary representing the product instance. Dictionary keys
-                correspond to the names of public attributes and, optionally,
-                computed properties. Dictionary values are the corresponding
-                attribute and property values.
-        """
-        self_asdict = asdict(self)
-        if not include_timestamp:
-            del self_asdict['timestamp']
-        if not include_properties:
-            return self_asdict
-        for prop in self._props:
-            self_asdict[prop] = getattr(self, prop)
-        return self_asdict
-
-    def is_newer_than(self, other: 'Product') -> bool:
+    def is_newer_than(self, other: Product) -> bool:
         """
         Determine if this product is newer that the given one by
         comparing their creation timestamps.
@@ -225,48 +151,38 @@ class Product:
         """
         return self.timestamp > other.timestamp
 
-    def diff(
-        self, other: 'Product', include_properties: bool = True
-    ) -> dict[str, tuple[typing.Any, typing.Any]]:
+    def diff(self, other: Product) -> dict[str, DiffValueTuple]:
         """
-        Compare this product with another to identify differences.
-        Does not compare the creation timestamps.
-        Optionally compares computed properties.
+        Compare this product with another to identify differences,
+        excluding the creation timestamps.
 
         Args:
-            other (Product):
-                The product to compare against.
-            include_properties (bool):
-                If True, includes property values in the comparison.
+            other (Product): The product to compare against.
 
         Returns:
-            dict[str, tuple[typing.Any, typing.Any]]:
-                A dictionary with keys as attribute names and, optionally,
-                property names. Dictionary values are tuples containing
-                the differing values between this product and the other.
+            dict[str, DiffValue]:
+                A dictionary with keys as attribute names and values as
+                namedtuples containing the differing values between
+                this product and the other product.
         """
-        # get self's and other's data (attrs and props)
-        self_asdict = self.as_dict(
-            include_timestamp=False, include_properties=include_properties
-            )
-        other_asdict = other.as_dict(
-            include_timestamp=False, include_properties=include_properties
-            )
+        # get self's and other's data and remove the timestamps
+        self_asdict = asdict(self)
+        other_asdict = asdict(other)
+        del self_asdict['timestamp']
+        del other_asdict['timestamp']
         # compare self to other
-        diff: dict[str, tuple[typing.Any, typing.Any]] = {}
+        diff: dict[str, DiffValueTuple] = {}
         for attr, value in self_asdict.items():
             other_value = other_asdict.get(attr)
             if value != other_value:
-                diff[attr] = (value, other_value)
+                diff[attr] = DiffValueTuple(value, other_value)
         # compare other to self (may be relevant for subclasses)
-        if type(self) is type(other):
-            return diff
         for attr, value in other_asdict.items():
             if attr not in self_asdict:
-                diff[attr] = (None, value)
+                diff[attr] = DiffValueTuple(None, value)
         return diff
 
-    def compare_stock(self, new: 'Product') -> 'ProductStockUpdateInfo':
+    def compare_quantity(self, new: Product) -> ProductQuantityUpdateInfo:
         """
         Compare the stock quantity of this product instance with the one of
         a newer instance of the same product.
@@ -302,9 +218,14 @@ class Product:
             increase = 0
             depleted = False
             restocked = False
-        return ProductStockUpdateInfo(decrease, increase, depleted, restocked)
+        return ProductQuantityUpdateInfo(
+            decrease,
+            increase,
+            depleted,
+            restocked
+            )
 
-    def compare_price(self, new: 'Product') -> 'ProductPriceUpdateInfo':
+    def compare_price(self, new: Product) -> ProductPriceUpdateInfo:
         """
         Compare the pricing details of this product instance with those of a
         newer instance of the same product.
@@ -367,8 +288,16 @@ class Product:
             )
 
 
+class DiffValueTuple(typing.NamedTuple):
+    """
+    Holds differing attribute values between two products.
+    """
+    value_self: typing.Any
+    value_other: typing.Any
+
+
 @dataclass(frozen=True)
-class ProductStockUpdateInfo:
+class ProductQuantityUpdateInfo:
     """
     Summarizes the details of stock quantity changes in a product,
     as determined by comparing two instances of this product.
@@ -397,18 +326,6 @@ class ProductStockUpdateInfo:
     True if the new product's stock quantity is greater than zero
     while the old product's stock was zero.
     """
-
-    def as_dict(self) -> dict[str, typing.Union[int, bool]]:
-        """
-        Convert the stock update information to a dictionary. The behavior
-        of this method is equivalent that of `dataclasses.asdict()`.
-
-        Returns:
-            dict[str, typing.Union[int, bool]]:
-                A dictionary representation of the stock update information,
-                with keys as attribute names and their corresponding values.
-        """
-        return asdict(self)
 
 
 @dataclass(frozen=True)
@@ -463,15 +380,3 @@ class ProductPriceUpdateInfo:
     A flag indicating whether a sale has ended on the product.
     True if the new product is not on sale and the old product was.
     """
-
-    def as_dict(self) -> dict[str, typing.Union[float, bool]]:
-        """
-        Convert the pricing update information to a dictionary. The behavior
-        of this method is equivalent that of `dataclasses.asdict()`.
-
-        Returns:
-            dict[str, typing.Union[float, bool]]:
-                A dictionary representation of the pricing update information,
-                with keys as attribute names and their corresponding values.
-        """
-        return asdict(self)

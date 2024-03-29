@@ -239,7 +239,7 @@ async def test_subscribe_multiple_to_multiple_and_post_multiple():
     handler_4 = new_async_handler()
     publisher.subscribe(ProductUpdateEvent.PRODUCT_UPDATED, handler_1)
     publisher.subscribe(ProductUpdateEvent.PRICE_UPDATED, handler_2)
-    publisher.subscribe(ProductUpdateEvent.STOCK_UPDATED, handler_3)
+    publisher.subscribe(ProductUpdateEvent.QUANTITY_UPDATED, handler_3)
     publisher.subscribe(ProductUpdateEvent.PIC_URL_UPDATED, handler_4)
     product_new = Product('foo', 123, quantity=1, price_full=90, price_curr=90)
     product_old = Product('foo', 123, quantity=2, price_full=80, price_curr=70)
@@ -247,7 +247,7 @@ async def test_subscribe_multiple_to_multiple_and_post_multiple():
         events=[
             ProductUpdateEvent.PRODUCT_UPDATED,
             ProductUpdateEvent.PRICE_UPDATED,
-            ProductUpdateEvent.STOCK_UPDATED,
+            ProductUpdateEvent.QUANTITY_UPDATED,
         ],
         product_new=product_new,
         product_old=product_old,

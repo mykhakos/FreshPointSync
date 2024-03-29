@@ -1,69 +1,9 @@
 import time
 import pytest
 
-from dataclasses import asdict
-
 from freshpointsync.product import (
-    Product, ProductPriceUpdateInfo, ProductStockUpdateInfo
+    Product, ProductPriceUpdateInfo, ProductQuantityUpdateInfo
 )
-from freshpointsync.product._product import collect_props
-
-
-def test_collect_props() -> None:
-
-    class Foo:
-        class_var: int = 1
-
-        def __init__(self) -> None:
-            self.inst_var: int = 2
-            self._hidden_inst_var: int = 3
-
-        @property
-        def class_var_plus_one(self) -> float:
-            return self.class_var + 1
-
-        @property
-        def inst_var_plus_one(self) -> float:
-            return self.inst_var + 1
-
-        @property
-        def _hidden_prop(self) -> bool:
-            return True
-
-    class Bar(Foo):
-        child_class_var: int = 4
-
-        def __init__(self) -> None:
-            super().__init__()
-            self.child_inst_var: int = 5
-            self._hidden_child_inst_var: int = 6
-
-        @property
-        def child_class_var_plus_one(self) -> float:
-            return self.child_class_var + 1
-
-        @property
-        def _hidden_child_prop(self) -> bool:
-            return False
-
-    props_foo = (
-        'class_var_plus_one', 'inst_var_plus_one'
-        )
-    props_foo_private = (
-        '_hidden_prop', 'class_var_plus_one', 'inst_var_plus_one'
-        )
-    props_bar = (
-        'child_class_var_plus_one', 'class_var_plus_one', 'inst_var_plus_one'
-        )
-    props_bar_private = (
-        '_hidden_child_prop', '_hidden_prop', 'child_class_var_plus_one',
-        'class_var_plus_one', 'inst_var_plus_one'
-        )
-    assert collect_props(type(Foo())) == props_foo
-    assert collect_props(Foo) == props_foo
-    assert collect_props(Foo, include_private=True) == props_foo_private
-    assert collect_props(Bar) == props_bar
-    assert collect_props(Bar, include_private=True) == props_bar_private
 
 
 @pytest.mark.parametrize(
@@ -137,107 +77,28 @@ def test_is_newer():
     assert prod_2.is_newer_than(prod_1)
 
 
-def test_as_dict():
-    prod = Product(
-        product_id=123,
-        name='foo',
-        category='bar',
-        is_vegetarian=True,
-        is_gluten_free=False,
-        quantity=5,
-        price_full=10,
-        price_curr=5,
-        pic_url='url',
-        location_id=321,
-        location_name='loc'
-        )
-    assert prod.as_dict() == {
-        'product_id': 123,
-        'name': 'foo',
-        'category': 'bar',
-        'is_vegetarian': True,
-        'is_gluten_free': False,
-        'quantity': 5,
-        'price_full': 10,
-        'price_curr': 5,
-        'pic_url': 'url',
-        'location_id': 321,
-        'location_name': 'loc'
-    }
-    assert prod.as_dict(include_timestamp=True) == {
-        'product_id': 123,
-        'name': 'foo',
-        'category': 'bar',
-        'is_vegetarian': True,
-        'is_gluten_free': False,
-        'quantity': 5,
-        'price_full': 10,
-        'price_curr': 5,
-        'pic_url': 'url',
-        'location_id': 321,
-        'location_name': 'loc',
-        'timestamp': prod.timestamp
-    }
-    assert prod.as_dict(include_properties=True) == {
-        'product_id': 123,
-        'name': 'foo',
-        'category': 'bar',
-        'is_vegetarian': True,
-        'is_gluten_free': False,
-        'quantity': 5,
-        'price_full': 10,
-        'price_curr': 5,
-        'pic_url': 'url',
-        'location_id': 321,
-        'location_name': 'loc',
-        'discount_rate': 0.5,
-        'is_on_sale': True,
-        'is_available': True,
-        'is_sold_out': False,
-        'is_last_piece': False,
-        'name_lowercase_ascii': 'foo',
-        'category_lowercase_ascii': 'bar'
-    }
-
-
 @pytest.mark.parametrize(
-    "prod_1, prod_2, diff, diff_props",
+    "prod_1, prod_2, diff",
     [
         (
             Product(123, quantity=4, price_full=10),
             Product(123, quantity=4, price_full=10),
-            {},
             {}
         ),
         (
             Product(123, quantity=4, price_full=10, price_curr=10),
             Product(123, quantity=4, price_full=10, price_curr=5),
-            {'price_curr': (10, 5)},
-            {
-                'price_curr': (10, 5),
-                'is_on_sale': (False, True),
-                'discount_rate': (0, 0.5)
-            }
+            {'price_curr': (10, 5)}
         ),
         (
             Product(123, quantity=4, price_full=10, price_curr=5),
             Product(123, quantity=4, price_full=10, price_curr=10),
-            {'price_curr': (5, 10)},
-            {
-                'price_curr': (5, 10),
-                'is_on_sale': (True, False),
-                'discount_rate': (0.5, 0)
-            }
+            {'price_curr': (5, 10)}
         ),
         (
             Product(123, quantity=5, price_full=10, price_curr=10),
             Product(123, quantity=0, price_full=10, price_curr=10),
-            {'quantity': (5, 0)},
-            {
-                'quantity': (5, 0),
-                'is_sold_out': (False, True),
-                'is_available': (True, False)
-            },
+            {'quantity': (5, 0)}
         ),
         (
             Product(123, name='foo', quantity=0, price_full=5),
@@ -248,23 +109,12 @@ def test_as_dict():
                 'quantity': (0, 5),
                 'price_full': (5, 10),
                 'price_curr': (5, 10)
-            },
-            {
-                'product_id': (123, 321),
-                'name': ('foo', 'bar'),
-                'name_lowercase_ascii': ('foo', 'bar'),
-                'quantity': (0, 5),
-                'price_full': (5, 10),
-                'price_curr': (5, 10),
-                'is_sold_out': (True, False),
-                'is_available': (False, True),
-            },
+            }
         ),
     ]
 )
-def test_diff(prod_1: Product, prod_2: Product, diff: dict, diff_props: dict):
-    assert prod_1.diff(prod_2, include_properties=False) == diff
-    assert prod_1.diff(prod_2, include_properties=True) == diff_props
+def test_diff(prod_1: Product, prod_2: Product, diff: dict):
+    assert prod_1.diff(prod_2) == diff
 
 
 @pytest.mark.parametrize(
@@ -278,13 +128,16 @@ def test_diff(prod_1: Product, prod_2: Product, diff: dict, diff_props: dict):
 def test_product_stock_update_info(
     stock_decrease, stock_increase, stock_depleted, stock_restocked
 ):
-    update_info = ProductStockUpdateInfo(
+    update_info = ProductQuantityUpdateInfo(
         stock_decrease=stock_decrease,
         stock_increase=stock_increase,
         stock_depleted=stock_depleted,
         stock_restocked=stock_restocked,
     )
-    assert update_info.as_dict() == asdict(update_info)
+    assert update_info.stock_decrease == stock_decrease
+    assert update_info.stock_increase == stock_increase
+    assert update_info.stock_depleted == stock_depleted
+    assert update_info.stock_restocked == stock_restocked
 
 
 @pytest.mark.parametrize(
@@ -323,7 +176,14 @@ def test_product_price_update_info(
         sale_started=sale_started,
         sale_ended=sale_ended,
     )
-    assert update_info.as_dict() == asdict(update_info)
+    assert update_info.price_full_decrease == price_full_decrease
+    assert update_info.price_full_increase == price_full_increase
+    assert update_info.price_curr_decrease == price_curr_decrease
+    assert update_info.price_curr_increase == price_curr_increase
+    assert update_info.discount_rate_decrease == discount_rate_decrease
+    assert update_info.discount_rate_increase == discount_rate_increase
+    assert update_info.sale_started == sale_started
+    assert update_info.sale_ended == sale_ended
 
 
 @pytest.mark.parametrize(
@@ -332,7 +192,7 @@ def test_product_price_update_info(
         (
             Product(123),
             Product(123),
-            ProductStockUpdateInfo(
+            ProductQuantityUpdateInfo(
                 stock_decrease=0,
                 stock_increase=0,
                 stock_depleted=False,
@@ -342,7 +202,7 @@ def test_product_price_update_info(
         (
             Product(123, quantity=4, price_full=10),
             Product(123, quantity=4, price_full=10),
-            ProductStockUpdateInfo(
+            ProductQuantityUpdateInfo(
                 stock_decrease=0,
                 stock_increase=0,
                 stock_depleted=False,
@@ -352,7 +212,7 @@ def test_product_price_update_info(
         (
             Product(123, quantity=4, price_full=10, price_curr=10),
             Product(123, quantity=4, price_full=10, price_curr=5),
-            ProductStockUpdateInfo(
+            ProductQuantityUpdateInfo(
                 stock_decrease=0,
                 stock_increase=0,
                 stock_depleted=False,
@@ -362,7 +222,7 @@ def test_product_price_update_info(
         (
             Product(123, quantity=0, price_full=10, price_curr=10),
             Product(123, quantity=0, price_full=10, price_curr=10),
-            ProductStockUpdateInfo(
+            ProductQuantityUpdateInfo(
                 stock_decrease=0,
                 stock_increase=0,
                 stock_depleted=False,
@@ -372,7 +232,7 @@ def test_product_price_update_info(
         (
             Product(123, quantity=5),
             Product(123, quantity=2),
-            ProductStockUpdateInfo(
+            ProductQuantityUpdateInfo(
                 stock_decrease=3,
                 stock_increase=0,
                 stock_depleted=False,
@@ -382,7 +242,7 @@ def test_product_price_update_info(
         (
             Product(123, quantity=2),
             Product(123, quantity=0),
-            ProductStockUpdateInfo(
+            ProductQuantityUpdateInfo(
                 stock_decrease=2,
                 stock_increase=0,
                 stock_depleted=True,
@@ -392,7 +252,7 @@ def test_product_price_update_info(
         (
             Product(123, quantity=0),
             Product(123, quantity=2),
-            ProductStockUpdateInfo(
+            ProductQuantityUpdateInfo(
                 stock_decrease=0,
                 stock_increase=2,
                 stock_depleted=False,
@@ -402,7 +262,7 @@ def test_product_price_update_info(
         (
             Product(123, quantity=2),
             Product(123, quantity=5),
-            ProductStockUpdateInfo(
+            ProductQuantityUpdateInfo(
                 stock_decrease=0,
                 stock_increase=3,
                 stock_depleted=False,
@@ -411,8 +271,8 @@ def test_product_price_update_info(
         ),
     ]
 )
-def test_compare_stock(prod_1: Product, prod_2: Product, info):
-    assert prod_1.compare_stock(prod_2) == info
+def test_compare_quantity(prod_1: Product, prod_2: Product, info):
+    assert prod_1.compare_quantity(prod_2) == info
 
 
 @pytest.mark.parametrize(

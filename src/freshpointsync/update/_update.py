@@ -399,7 +399,7 @@ class ProductUpdateEvent(enum.Enum):
     full price and current sale price."""
     PIC_URL_UPDATED = "pic_url_updated"
     """Indicates an update to the product's illustration picture URL."""
-    PRODUCT_DELETED = "PRODUCT_DELETED"
+    PRODUCT_REMOVED = "product_removed"
     """Indicates that a product has been removed from the product page."""
 
 
@@ -1020,7 +1020,7 @@ class ProductCacheUpdater:
 
     def delete_product(self, product: Product, **kwargs: Any) -> None:
         """
-        Remove a product from the cache and posts a `PRODUCT_DELETED` event.
+        Remove a product from the cache and posts a `PRODUCT_REMOVED` event.
 
         Note that this method assumes that the product is present in the cache.
 
@@ -1031,7 +1031,7 @@ class ProductCacheUpdater:
         """
         del self.products[product.product_id]
         self._publisher.post(
-            event=ProductUpdateEvent.PRODUCT_DELETED,
+            event=ProductUpdateEvent.PRODUCT_REMOVED,
             product_new=None,
             product_old=product,
             **kwargs

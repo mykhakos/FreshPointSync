@@ -505,8 +505,42 @@ class ProductFinder:
     `Product` instances.
     """
 
-    @staticmethod
+    @classmethod
+    def product_matches(
+        cls,
+        product: Product,
+        constraint: typing.Optional[typing.Callable[[Product], bool]] = None,
+        **attributes: typing.Any
+    ) -> bool:
+        """
+        Check if a product matches the given attributes and an optional
+        constraint.
+
+        Args:
+            product (Product): The product to check.
+            constraint (Optional[Callable[[Product], bool]]):
+                An optional function that takes a `Product` instance as input
+                and returns a boolean indicating whether a certain constraint
+                is met for this instance.
+            **attributes (Any):
+                Arbitrary keyword arguments representing the product
+                attributes and properties and their expected values for
+                the product to match.
+
+        Returns:
+            bool:
+                True if the product matches the given attributes and
+                constraint, False otherwise.
+        """
+        if constraint and not constraint(product):
+            return False
+        return all(
+            getattr(product, key) == value for key, value in attributes.items()
+            )
+
+    @classmethod
     def find_product(
+        cls,
         products: typing.Iterable[Product],
         constraint: typing.Optional[typing.Callable[[Product], bool]] = None,
         **attributes: typing.Any
@@ -533,17 +567,13 @@ class ProductFinder:
                 attributes and constraint, or None if no such product is found.
         """
         for product in products:
-            if constraint and not constraint(product):
-                continue
-            if not attributes or all(
-                getattr(product, key) == value
-                for key, value in attributes.items()
-            ):
+            if cls.product_matches(product, constraint, **attributes):
                 return product
         return None
 
-    @staticmethod
+    @classmethod
     def find_products(
+        cls,
         products: typing.Iterable[Product],
         constraint: typing.Optional[typing.Callable[[Product], bool]] = None,
         **attributes
@@ -571,11 +601,6 @@ class ProductFinder:
         """
         found_products = []
         for product in products:
-            if constraint and not constraint(product):
-                continue
-            if all(
-                getattr(product, key, None) == value
-                for key, value in attributes.items()
-            ):
+            if cls.product_matches(product, constraint, **attributes):
                 found_products.append(product)
         return found_products

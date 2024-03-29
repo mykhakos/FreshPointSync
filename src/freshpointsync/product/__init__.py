@@ -1,14 +1,16 @@
 from ._product import (
+    DEFAULT_PIC_URL,
+    DiffValueTuple,
     Product,
     ProductPriceUpdateInfo,
-    ProductStockUpdateInfo,
-    get_default_pic_url,
+    ProductQuantityUpdateInfo,
 )
 
 
 __all__ = [
+    'DEFAULT_PIC_URL',
+    'DiffValueTuple',
     'Product',
     'ProductPriceUpdateInfo',
-    'ProductStockUpdateInfo',
-    'get_default_pic_url',
+    'ProductQuantityUpdateInfo'
 ]

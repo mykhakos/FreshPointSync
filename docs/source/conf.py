@@ -11,12 +11,13 @@ release = '0.1.0'
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
+    "sphinx_rtd_theme",
     "sphinx.ext.autodoc",
     "sphinx.ext.viewcode",
     "sphinx.ext.doctest",
     "sphinx.ext.todo",
-    "sphinx_rtd_theme",
-    'sphinx.ext.napoleon'
+    "sphinx.ext.napoleon",
+    "sphinxcontrib.autodoc_pydantic"
 ]
 
 templates_path = ['_templates']

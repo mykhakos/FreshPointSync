@@ -1,4 +1,16 @@
-from ._page import FreshPointProductPage, FreshPointProductPageHub
+from ._page import (
+    FetchInfo,
+    ProductPage,
+    ProductPageData,
+    ProductPageHub,
+    ProductPageHubData
+)
 
 
-__all__ = ['FreshPointProductPage', 'FreshPointProductPageHub']
+__all__ = [
+    'FetchInfo',
+    'ProductPage',
+    'ProductPageData',
+    'ProductPageHub',
+    'ProductPageHubData'
+]

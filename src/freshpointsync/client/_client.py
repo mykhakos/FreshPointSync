@@ -2,25 +2,34 @@ import asyncio
 import aiohttp
 import logging
 
+import os
+
 from typing import Any, Optional, Union
 
 
 logger = logging.getLogger("freshpointsync.client")
 
 
+def get_296_html():
+    path = os.path.join(os.path.dirname(__file__), "296.html")
+    with open(path, 'r', encoding='utf-8') as f:
+        return f.read()
+
+
 class ProductDataFetchClient:
-    """
-    Asynchronous utility for fetching content of a specified FreshPoint.cz web
-    page under various network conditions and server responses. This class
-    wraps an `aiohttp.ClientSession` object and provides additional features
-    like retries, timeouts, logging, and comprehensive error handling.
+    """Asynchronous utility for fetching contents of a specified FreshPoint.cz
+    web page.
+
+    This class wraps an `aiohttp.ClientSession` object and provides additional
+    features like retries, timeouts, logging, and comprehensive error handling.
     """
     BASE_URL = "https://my.freshpoint.cz"
+    """The base URL of the FreshPoint.cz website."""
 
     def __init__(
         self,
         timeout: Optional[Union[aiohttp.ClientTimeout, int, float]] = None,
-        max_retries: int = 3
+        max_retries: int = 5
     ) -> None:
         self._timeout = self._check_client_timeout(timeout)
         self._max_retries = self._check_max_retries(max_retries)
@@ -37,13 +46,13 @@ class ProductDataFetchClient:
 
     @classmethod
     def get_page_url(cls, location_id: int) -> str:
-        """
-        Genrate a page URL for a given location ID.
+        """Generate a page URL for a given location ID.
 
         Args:
             location_id (int): The ID of the location, as it appears in
-            the FreshPoint.cz web page URL. For example, in
-            https://my.freshpoint.cz/device/product-list/296, the ID is 296.
+                the FreshPoint.cz web page URL. For example, in
+                https://my.freshpoint.cz/device/product-list/296,
+                the ID is 296.
 
         Returns:
             str: The full page URL for the given location ID.
@@ -57,8 +66,7 @@ class ProductDataFetchClient:
 
     @property
     def is_session_closed(self) -> bool:
-        """
-        Check if the client session is closed.
+        """Check if the client session is closed.
 
         Returns:
             bool: True if the client session is closed, False otherwise.
@@ -68,8 +76,7 @@ class ProductDataFetchClient:
         return self._client_session.closed
 
     async def set_session(self, session: aiohttp.ClientSession) -> None:
-        """
-        Set the client session object. If the previous session
+        """Set the client session object. If the previous session
         is not closed, it is closed before setting the new one.
 
         Args:
@@ -81,18 +88,12 @@ class ProductDataFetchClient:
 
     @property
     def timeout(self) -> aiohttp.ClientTimeout:
-        """
-        Get the client request timeout.
-
-        Returns:
-            aiohttp.ClientTimeout: The timeout for the client.
-        """
+        """Client request timeout."""
         return self._timeout
 
     @staticmethod
     def _check_client_timeout(timeout: Any) -> aiohttp.ClientTimeout:
-        """
-        Check and validate the client timeout value.
+        """Check and validate the client timeout value.
 
         Args:
             timeout (Any): The timeout value to be checked.
@@ -118,8 +119,7 @@ class ProductDataFetchClient:
     def set_timeout(
         self, timeout: Optional[Union[aiohttp.ClientTimeout, int, float]]
     ) -> None:
-        """
-        Set the client request timeout.
+        """Set the client request timeout.
 
         Args:
             timeout (Optional[Union[aiohttp.ClientTimeout, int, float]]):
@@ -139,8 +139,7 @@ class ProductDataFetchClient:
 
     @staticmethod
     def _check_max_retries(max_retries: Any) -> int:
-        """
-        Check if the given max_retries value is valid.
+        """Check if the given max_retries value is valid.
 
         Args:
             max_retries (Any): The number of max retries.
@@ -159,8 +158,7 @@ class ProductDataFetchClient:
         return max_retries
 
     def set_max_retries(self, max_retries: int) -> None:
-        """
-        Set the maximum number of retries for the fetching data.
+        """Set the maximum number of retries for the fetching data.
 
         Args:
             max_retries (int): The maximum number of retries.
@@ -201,8 +199,7 @@ class ProductDataFetchClient:
     def _check_fetch_args(
         self, location_id: Any, timeout: Any, max_retries: Any
     ) -> tuple[aiohttp.ClientSession, str, aiohttp.ClientTimeout, int]:
-        """
-        Check and validate the arguments for fetching data. Note that this
+        """Check and validate the arguments for fetching data. Note that this
         method may raise exceptions via the checks for timeout and max_retries.
 
         Args:
@@ -236,20 +233,20 @@ class ProductDataFetchClient:
         relative_url: str,
         timeout: aiohttp.ClientTimeout
     ) -> Optional[str]:
-        """
-        Fetch data from the specified URL using the provided session and
+        """Fetch data from the specified URL using the provided session and
         timeout.
 
         Args:
             session (aiohttp.ClientSession): The client session to use for
-            the request.
+                the request.
             relative_url (str): The relative URL to fetch data from.
             timeout (aiohttp.ClientTimeout): The timeout for the request.
 
         Returns:
             Optional[str]: The fetched data as a string,
-            or None if an error occurred.
+                or None if an error occurred.
         """
+        return get_296_html()
         try:
             async with session.get(relative_url, timeout=timeout) as response:
                 if response.status == 200:
@@ -284,14 +281,14 @@ class ProductDataFetchClient:
 
         Args:
             location_id (Union[int, str]): The ID the FreshPoint location.
-            timeout (Optional[Union[aiohttp.ClientTimeout, int, float]]):
+            timeout (Optional[Union[aiohttp.ClientTimeout, int, float]]):\
             The timeout for the request. If None, the default timeout is used.
             max_retries (Optional[int]): The maximum number of retries.
-            If None, the default number of retries is used.
+                If None, the default number of retries is used.
 
         Returns:
-            Optional[str]: The fetched data as a string,
-            or None if the fetch failed.
+            Optional[str]: The fetched data as a string,\
+                or None if the fetch failed.
         """
         args = self._check_fetch_args(location_id, timeout, max_retries)
         session, relative_url, timeout, max_retries = args

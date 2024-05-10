@@ -138,7 +138,7 @@ async def test_subscribe_and_post_and_unsubscribe(async_handler):
     publisher = ProductUpdateEventPublisher()
     event = ProductUpdateEvent.PRODUCT_ADDED
     publisher.subscribe(event, async_handler)
-    product_new = Product('foo', 123)
+    product_new = Product(id_=123, name='foo')
     product_old = None
     publisher.post(event, product_new, product_old)
     async_handler.assert_called_once()
@@ -168,7 +168,7 @@ async def test_subscribe_one_to_one_and_post_wrong(handler):
 async def test_subscribe_one_to_one_and_post_once(handler):
     publisher = ProductUpdateEventPublisher()
     publisher.subscribe(ProductUpdateEvent.PRODUCT_ADDED, handler)
-    product_new = Product('foo', 123)
+    product_new = Product(id_=123, name='foo')
     product_old = None
     publisher.post(
         ProductUpdateEvent.PRODUCT_ADDED, product_new, product_old, foo='bar'
@@ -176,6 +176,7 @@ async def test_subscribe_one_to_one_and_post_once(handler):
     context = ProductUpdateContext(
         {
             'foo': 'bar',
+            'event': ProductUpdateEvent.PRODUCT_ADDED,
             'product_new': product_new,
             'product_old': product_old,
             'location_id': 0,
@@ -190,7 +191,7 @@ async def test_subscribe_one_to_one_and_post_once(handler):
 async def test_subscribe_one_to_one_and_post_twice(handler):
     publisher = ProductUpdateEventPublisher()
     publisher.subscribe(ProductUpdateEvent.PRODUCT_ADDED, handler)
-    product_new = Product('foo', 123)
+    product_new = Product(id_=123, name='foo')
     product_old = None
     publisher.post(
         ProductUpdateEvent.PRODUCT_ADDED, product_new, product_old, foo='bar'
@@ -203,6 +204,7 @@ async def test_subscribe_one_to_one_and_post_twice(handler):
     last_context = ProductUpdateContext(
         {
             'bar': 'foo',
+            'event': ProductUpdateEvent.PRODUCT_ADDED,
             'product_new': None,
             'product_old': product_new,
             'location_id': 0,
@@ -218,7 +220,7 @@ async def test_subscribe_one_to_multiple_and_post_each_once(handler):
     publisher = ProductUpdateEventPublisher()
     publisher.subscribe(ProductUpdateEvent.PRODUCT_ADDED, handler)
     publisher.subscribe(ProductUpdateEvent.PRODUCT_REMOVED, handler)
-    product_new = Product('foo', 123)
+    product_new = Product(id_=123, name='foo')
     product_old = None
     publisher.post(
         ProductUpdateEvent.PRODUCT_ADDED, product_new, product_old
@@ -241,29 +243,56 @@ async def test_subscribe_multiple_to_multiple_and_post_multiple():
     publisher.subscribe(ProductUpdateEvent.PRICE_UPDATED, handler_2)
     publisher.subscribe(ProductUpdateEvent.QUANTITY_UPDATED, handler_3)
     publisher.subscribe(ProductUpdateEvent.PIC_URL_UPDATED, handler_4)
-    product_new = Product('foo', 123, quantity=1, price_full=90, price_curr=90)
-    product_old = Product('foo', 123, quantity=2, price_full=80, price_curr=70)
-    publisher.post_multiple(
-        events=[
-            ProductUpdateEvent.PRODUCT_UPDATED,
-            ProductUpdateEvent.PRICE_UPDATED,
-            ProductUpdateEvent.QUANTITY_UPDATED,
-        ],
-        product_new=product_new,
-        product_old=product_old,
-        arg='test'
-    )
+    product_new = Product(
+        id_=123, name='foo', quantity=1, price_full=90, price_curr=90
+        )
+    product_old = Product(
+        id_=123, name='foo', quantity=2, price_full=80, price_curr=70
+        )
+    events = [
+        ProductUpdateEvent.PRODUCT_UPDATED,
+        ProductUpdateEvent.PRICE_UPDATED,
+        ProductUpdateEvent.QUANTITY_UPDATED
+    ]
+    for event in events:
+        publisher.post(
+            event=event,
+            product_new=product_new,
+            product_old=product_old,
+            arg='test'
+        )
     await asyncio.sleep(0.1)  # let the event loop run
-    context = ProductUpdateContext(
+    context_product_updated = ProductUpdateContext(
         {
             'arg': 'test',
+            'event': ProductUpdateEvent.PRODUCT_UPDATED,
             'product_new': product_new,
             'product_old': product_old,
             'location_id': 0,
             'location_name': ''
         }
     )
-    handler_1.assert_called_once_with(context)
-    handler_2.assert_called_once_with(context)
-    handler_3.assert_called_once_with(context)
+    context_price_updated = ProductUpdateContext(
+        {
+            'arg': 'test',
+            'event': ProductUpdateEvent.PRICE_UPDATED,
+            'product_new': product_new,
+            'product_old': product_old,
+            'location_id': 0,
+            'location_name': ''
+        }
+    )
+    context_quantity_updated = ProductUpdateContext(
+        {
+            'arg': 'test',
+            'event': ProductUpdateEvent.QUANTITY_UPDATED,
+            'product_new': product_new,
+            'product_old': product_old,
+            'location_id': 0,
+            'location_name': ''
+        }
+    )
+    handler_1.assert_called_once_with(context_product_updated)
+    handler_2.assert_called_once_with(context_price_updated)
+    handler_3.assert_called_once_with(context_quantity_updated)
     handler_4.assert_not_called()

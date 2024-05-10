@@ -34,7 +34,7 @@ def cache_updater_with_handlers() -> tuple[ProductCacheUpdater, Handlers]:
     """
     products = {
         1: Product(
-            product_id=1,
+            id_=1,
             name="Product 1",
             quantity=10,
             price_full=10.0,
@@ -42,7 +42,7 @@ def cache_updater_with_handlers() -> tuple[ProductCacheUpdater, Handlers]:
             pic_url="pic1.jpg"
             ),
         2: Product(
-            product_id=2,
+            id_=2,
             name="Product 2",
             quantity=5,
             price_full=5.0,
@@ -74,7 +74,7 @@ def cache_updater_with_handlers() -> tuple[ProductCacheUpdater, Handlers]:
 def product_batch():
     return [
         Product(
-            product_id=1,
+            id_=1,
             name="Product 1",
             quantity=15,
             price_full=10.0,
@@ -82,7 +82,7 @@ def product_batch():
             pic_url="pic1.jpg"
             ),
         Product(
-            product_id=2,
+            id_=2,
             name="Product 2",
             quantity=5,
             price_full=5.0,
@@ -90,7 +90,7 @@ def product_batch():
             pic_url="pic2.jpg"
             ),
         Product(
-            product_id=4,
+            id_=4,
             name="Product 4",
             quantity=7,
             price_full=7.0,
@@ -103,7 +103,7 @@ def product_batch():
 @pytest.mark.asyncio  # async because we need to initialize the event loop
 async def test_create_product(cache_updater_with_handlers):
     product = Product(
-        product_id=3,
+        id_=3,
         name="Product 3",
         quantity=20,
         price_full=15.0,
@@ -131,7 +131,7 @@ async def test_delete_product(cache_updater_with_handlers):
 async def test_update_product(cache_updater_with_handlers):
     updater, handlers = cache_updater_with_handlers
     product = Product(
-        product_id=2,
+        id_=2,
         name="Product 2",
         quantity=8,
         price_full=5.0,

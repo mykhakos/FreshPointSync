@@ -10,12 +10,12 @@ from freshpointsync.product import (
     "created, reference",
     [
         (
-            Product(123, name='foo'),
-            Product(123, name='foo'),
+            Product(id_=123, name='foo'),
+            Product(id_=123, name='foo'),
         ),
         (
-            Product(123),
-            Product(123, name=''),
+            Product(id_=123),
+            Product(id_=123, name=''),
         ),
     ]
 )
@@ -27,20 +27,20 @@ def test_create_eval_name(created: Product, reference: Product):
     "created, reference",
     [
         (
-            Product(123, price_full=10, price_curr=10),
-            Product(123, price_full=10, price_curr=10),
+            Product(id_=123, price_full=10, price_curr=10),
+            Product(id_=123, price_full=10, price_curr=10),
         ),
         (
-            Product(123, price_curr=10),
-            Product(123, price_full=10, price_curr=10),
+            Product(id_=123, price_curr=10),
+            Product(id_=123, price_full=10, price_curr=10),
         ),
         (
-            Product(123, price_full=10),
-            Product(123, price_full=10, price_curr=10),
+            Product(id_=123, price_full=10),
+            Product(id_=123, price_full=10, price_curr=10),
         ),
         (
-            Product(123),
-            Product(123, price_full=0, price_curr=0),
+            Product(id_=123),
+            Product(id_=123, price_full=0, price_curr=0),
         ),
     ]
 )
@@ -52,28 +52,23 @@ def test_create_eval_prices(created: Product, reference: Product):
 @pytest.mark.parametrize(
     "prod, rate",
     [
-        (Product(123, price_full=0, price_curr=0), 0),
-        (Product(123, price_full=0, price_curr=10), 0),  # should not happen
-        (Product(123, price_full=5, price_curr=10), 0),  # should not happen
-        (Product(123, price_full=10, price_curr=0), 1),
-        (Product(123, price_full=10, price_curr=5), 0.5),
-        (Product(123, price_full=10, price_curr=2/3*10), 0.33),
-        (Product(123, price_full=10, price_curr=10), 0),
+        (Product(id_=123, price_full=0, price_curr=0), 0),
+        (Product(id_=123, price_full=0, price_curr=10), 0),
+        (Product(id_=123, price_full=5, price_curr=10), 0),
+        (Product(id_=123, price_full=10, price_curr=0), 1),
+        (Product(id_=123, price_full=10, price_curr=5), 0.5),
+        (Product(id_=123, price_full=10, price_curr=2/3*10), 0.33),
+        (Product(id_=123, price_full=10, price_curr=10), 0),
     ]
 )
 def test_discount_rate(prod: Product, rate: float):
     assert prod.discount_rate == rate
 
 
-def test_is_immutable():
-    with pytest.raises(AttributeError):
-        Product('foo', 123).product_id = 321
-
-
 def test_is_newer():
-    prod_1 = Product(123)
+    prod_1 = Product(id_=123)
     time.sleep(0.001)
-    prod_2 = Product(123)
+    prod_2 = Product(id_=123)
     assert prod_2.is_newer_than(prod_1)
 
 
@@ -81,30 +76,30 @@ def test_is_newer():
     "prod_1, prod_2, diff",
     [
         (
-            Product(123, quantity=4, price_full=10),
-            Product(123, quantity=4, price_full=10),
+            Product(id_=123, quantity=4, price_full=10),
+            Product(id_=123, quantity=4, price_full=10),
             {}
         ),
         (
-            Product(123, quantity=4, price_full=10, price_curr=10),
-            Product(123, quantity=4, price_full=10, price_curr=5),
+            Product(id_=123, quantity=4, price_full=10, price_curr=10),
+            Product(id_=123, quantity=4, price_full=10, price_curr=5),
             {'price_curr': (10, 5)}
         ),
         (
-            Product(123, quantity=4, price_full=10, price_curr=5),
-            Product(123, quantity=4, price_full=10, price_curr=10),
+            Product(id_=123, quantity=4, price_full=10, price_curr=5),
+            Product(id_=123, quantity=4, price_full=10, price_curr=10),
             {'price_curr': (5, 10)}
         ),
         (
-            Product(123, quantity=5, price_full=10, price_curr=10),
-            Product(123, quantity=0, price_full=10, price_curr=10),
+            Product(id_=123, quantity=5, price_full=10, price_curr=10),
+            Product(id_=123, quantity=0, price_full=10, price_curr=10),
             {'quantity': (5, 0)}
         ),
         (
-            Product(123, name='foo', quantity=0, price_full=5),
-            Product(321, name='bar', quantity=5, price_full=10),
+            Product(id_=123, name='foo', quantity=0, price_full=5),
+            Product(id_=321, name='bar', quantity=5, price_full=10),
             {
-                'product_id': (123, 321),
+                'id_': (123, 321),
                 'name': ('foo', 'bar'),
                 'quantity': (0, 5),
                 'price_full': (5, 10),
@@ -190,8 +185,8 @@ def test_product_price_update_info(
     "prod_1, prod_2, info",
     [
         (
-            Product(123),
-            Product(123),
+            Product(id_=123),
+            Product(id_=123),
             ProductQuantityUpdateInfo(
                 stock_decrease=0,
                 stock_increase=0,
@@ -200,8 +195,8 @@ def test_product_price_update_info(
             )
         ),
         (
-            Product(123, quantity=4, price_full=10),
-            Product(123, quantity=4, price_full=10),
+            Product(id_=123, quantity=4, price_full=10),
+            Product(id_=123, quantity=4, price_full=10),
             ProductQuantityUpdateInfo(
                 stock_decrease=0,
                 stock_increase=0,
@@ -210,8 +205,8 @@ def test_product_price_update_info(
             )
         ),
         (
-            Product(123, quantity=4, price_full=10, price_curr=10),
-            Product(123, quantity=4, price_full=10, price_curr=5),
+            Product(id_=123, quantity=4, price_full=10, price_curr=10),
+            Product(id_=123, quantity=4, price_full=10, price_curr=5),
             ProductQuantityUpdateInfo(
                 stock_decrease=0,
                 stock_increase=0,
@@ -220,8 +215,8 @@ def test_product_price_update_info(
             )
         ),
         (
-            Product(123, quantity=0, price_full=10, price_curr=10),
-            Product(123, quantity=0, price_full=10, price_curr=10),
+            Product(id_=123, quantity=0, price_full=10, price_curr=10),
+            Product(id_=123, quantity=0, price_full=10, price_curr=10),
             ProductQuantityUpdateInfo(
                 stock_decrease=0,
                 stock_increase=0,
@@ -230,8 +225,8 @@ def test_product_price_update_info(
             )
         ),
         (
-            Product(123, quantity=5),
-            Product(123, quantity=2),
+            Product(id_=123, quantity=5),
+            Product(id_=123, quantity=2),
             ProductQuantityUpdateInfo(
                 stock_decrease=3,
                 stock_increase=0,
@@ -240,8 +235,8 @@ def test_product_price_update_info(
             )
         ),
         (
-            Product(123, quantity=2),
-            Product(123, quantity=0),
+            Product(id_=123, quantity=2),
+            Product(id_=123, quantity=0),
             ProductQuantityUpdateInfo(
                 stock_decrease=2,
                 stock_increase=0,
@@ -250,8 +245,8 @@ def test_product_price_update_info(
             )
         ),
         (
-            Product(123, quantity=0),
-            Product(123, quantity=2),
+            Product(id_=123, quantity=0),
+            Product(id_=123, quantity=2),
             ProductQuantityUpdateInfo(
                 stock_decrease=0,
                 stock_increase=2,
@@ -260,8 +255,8 @@ def test_product_price_update_info(
             )
         ),
         (
-            Product(123, quantity=2),
-            Product(123, quantity=5),
+            Product(id_=123, quantity=2),
+            Product(id_=123, quantity=5),
             ProductQuantityUpdateInfo(
                 stock_decrease=0,
                 stock_increase=3,
@@ -279,8 +274,8 @@ def test_compare_quantity(prod_1: Product, prod_2: Product, info):
     "prod_1, prod_2, info",
     [
         (
-            Product(123),
-            Product(123),
+            Product(id_=123),
+            Product(id_=123),
             ProductPriceUpdateInfo(
                 price_full_decrease=0,
                 price_full_increase=0,
@@ -293,8 +288,8 @@ def test_compare_quantity(prod_1: Product, prod_2: Product, info):
             )
         ),
         (
-            Product(123, quantity=4, price_full=10, price_curr=10),
-            Product(123, quantity=8, price_full=10, price_curr=10),
+            Product(id_=123, quantity=4, price_full=10, price_curr=10),
+            Product(id_=123, quantity=8, price_full=10, price_curr=10),
             ProductPriceUpdateInfo(
                 price_full_decrease=0,
                 price_full_increase=0,
@@ -307,8 +302,8 @@ def test_compare_quantity(prod_1: Product, prod_2: Product, info):
             )
         ),
         (
-            Product(123, price_full=10, price_curr=10),
-            Product(123, price_full=10, price_curr=5),
+            Product(id_=123, price_full=10, price_curr=10),
+            Product(id_=123, price_full=10, price_curr=5),
             ProductPriceUpdateInfo(
                 price_full_decrease=0,
                 price_full_increase=0,
@@ -321,8 +316,8 @@ def test_compare_quantity(prod_1: Product, prod_2: Product, info):
             )
         ),
         (
-            Product(123, price_full=10, price_curr=5),
-            Product(123, price_full=10, price_curr=10),
+            Product(id_=123, price_full=10, price_curr=5),
+            Product(id_=123, price_full=10, price_curr=10),
             ProductPriceUpdateInfo(
                 price_full_decrease=0,
                 price_full_increase=0,
@@ -335,8 +330,8 @@ def test_compare_quantity(prod_1: Product, prod_2: Product, info):
             )
         ),
         (
-            Product(123, price_full=10, price_curr=5),
-            Product(123, price_full=20, price_curr=10),
+            Product(id_=123, price_full=10, price_curr=5),
+            Product(id_=123, price_full=20, price_curr=10),
             ProductPriceUpdateInfo(
                 price_full_decrease=0,
                 price_full_increase=10,
@@ -349,8 +344,8 @@ def test_compare_quantity(prod_1: Product, prod_2: Product, info):
             )
         ),
         (
-            Product(123, price_full=10, price_curr=5),
-            Product(123, price_full=20, price_curr=15),
+            Product(id_=123, price_full=10, price_curr=5),
+            Product(id_=123, price_full=20, price_curr=15),
             ProductPriceUpdateInfo(
                 price_full_decrease=0,
                 price_full_increase=10,

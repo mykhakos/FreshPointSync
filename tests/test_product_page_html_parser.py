@@ -122,7 +122,7 @@ def test_find_product_valid(
         prod_name_input, prod_id_input
         )
     assert prod.name == prod_name_output
-    assert prod.product_id == prod_id_output
+    assert prod.id_ == prod_id_output
 
 
 @pytest.mark.parametrize(
@@ -155,7 +155,7 @@ def test_find_product_invalid(
     [
         Product(
             name="BIO Zahradní limonáda bezový květ & meduňka",
-            product_id=1419,
+            id_=1419,
             category="Nápoje",
             is_vegetarian=False,
             is_gluten_free=False,
@@ -170,7 +170,7 @@ def test_find_product_invalid(
         ),
         Product(
             name="Vepřový guláš, brambory",
-            product_id=806,
+            id_=806,
             category="Hlavní jídla",
             is_vegetarian=False,
             is_gluten_free=False,
@@ -185,7 +185,7 @@ def test_find_product_invalid(
         ),
         Product(
             name="Batátové chilli, basmati rýže",
-            product_id=1335,
+            id_=1335,
             category="Hlavní jídla",
             is_vegetarian=True,
             is_gluten_free=False,
@@ -203,7 +203,7 @@ def test_find_product_invalid(
                 "Vepřové výpečky s kysaným zelím a variací knedlíků "
                 "(karlovarský a bramborový)"
                 ),
-            product_id=990,
+            id_=990,
             category="Hlavní jídla",
             is_vegetarian=False,
             is_gluten_free=False,
@@ -221,8 +221,8 @@ def test_find_product_invalid(
 def test_parse_product_data(
     product: Product, product_page_html_parser: ProductPageHTMLParser
 ):
-    parsed = product_page_html_parser.find_product(id=product.product_id)
-    assert parsed.product_id == product.product_id
+    parsed = product_page_html_parser.find_product(id=product.id_)
+    assert parsed.id_ == product.id_
     assert parsed.name == product.name
     assert parsed.category == product.category
     assert parsed.is_vegetarian == product.is_vegetarian

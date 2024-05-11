@@ -8,12 +8,7 @@ from typing import Any, Optional, Union
 
 
 logger = logging.getLogger("freshpointsync.client")
-
-
-def get_296_html():
-    path = os.path.join(os.path.dirname(__file__), "296.html")
-    with open(path, 'r', encoding='utf-8') as f:
-        return f.read()
+"""Logger for the `freshpointsync.client` module."""
 
 
 class ProductDataFetchClient:
@@ -170,7 +165,7 @@ class ProductDataFetchClient:
         self._max_retries = self._check_max_retries(max_retries)
 
     async def start_session(self) -> None:
-        """Start an aiohttp client session if not already started."""
+        """Start an aiohttp client session if one is not already started."""
         if self.is_session_closed:
             logger.info('Starting new client session for "%s".', self.BASE_URL)
             session = aiohttp.ClientSession(base_url=self.BASE_URL)
@@ -184,7 +179,7 @@ class ProductDataFetchClient:
                 )
 
     async def close_session(self) -> None:
-        """Close the aiohttp client session if it's open."""
+        """Close the aiohttp client session if one is open."""
         if self.is_session_closed:
             logger.debug(
                 'Client session for "%s" is already closed.', self.BASE_URL
@@ -246,7 +241,6 @@ class ProductDataFetchClient:
             Optional[str]: The fetched data as a string,
                 or None if an error occurred.
         """
-        return get_296_html()
         try:
             async with session.get(relative_url, timeout=timeout) as response:
                 if response.status == 200:

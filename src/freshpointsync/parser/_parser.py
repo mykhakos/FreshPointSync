@@ -12,6 +12,7 @@ from ..product._product import Product
 
 
 logger = logging.getLogger("freshpointsync.parser")
+"""Logger for the `freshpointsync.parser` module."""
 
 
 def normalize_text(text: typing.Any) -> str:
@@ -156,7 +157,7 @@ class ProductHTMLParser:
                 )
         category = product_data.parent.find_all(
             name='h2',
-            string=lambda text: text
+            string=lambda text: bool(text)
             )
         try:
             return cls._extract_single_tag(category).text.strip()

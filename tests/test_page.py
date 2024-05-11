@@ -10,8 +10,8 @@ class TestProductPageData:
     def product_page_data(self):
         return ProductPageData(
             location_id=1,
+            html_hash="",
             products={},
-            html="<html></html>"
             )
 
     def test_url(self, product_page_data):

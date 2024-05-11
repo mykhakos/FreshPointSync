@@ -40,7 +40,7 @@ def handler_callback(fut):
 def test_subscribe_sync(sync_handler):
     publisher = ProductUpdateEventPublisher()
     event = ProductUpdateEvent.PRODUCT_ADDED
-    publisher.subscribe(event, sync_handler)
+    publisher.subscribe(sync_handler, event)
     assert event not in publisher.async_subscribers
     handler_data = publisher.sync_subscribers[event][0]
     assert sync_handler == handler_data.handler
@@ -52,7 +52,7 @@ def test_subscribe_sync(sync_handler):
 def test_subscribe_async(async_handler):
     publisher = ProductUpdateEventPublisher()
     event = ProductUpdateEvent.PRODUCT_ADDED
-    publisher.subscribe(event, async_handler)
+    publisher.subscribe(async_handler, event)
     assert event not in publisher.sync_subscribers
     handler_data = publisher.async_subscribers[event][0]
     assert async_handler == handler_data.handler
@@ -65,8 +65,8 @@ def test_subscribe_with_params(async_handler):
     publisher = ProductUpdateEventPublisher()
     event = ProductUpdateEvent.PRODUCT_ADDED
     publisher.subscribe(
-        event,
         async_handler,
+        event,
         call_safe=False,
         handler_done_callback=handler_callback
         )
@@ -80,8 +80,8 @@ def test_subscribe_with_params(async_handler):
 
 def test_subscribe_same_twice(async_handler):
     publisher = ProductUpdateEventPublisher()
-    publisher.subscribe(ProductUpdateEvent.PRODUCT_ADDED, async_handler)
-    publisher.subscribe(ProductUpdateEvent.PRODUCT_ADDED, async_handler)
+    publisher.subscribe(async_handler, ProductUpdateEvent.PRODUCT_ADDED)
+    publisher.subscribe(async_handler, ProductUpdateEvent.PRODUCT_ADDED)
     subscribers = publisher.async_subscribers[ProductUpdateEvent.PRODUCT_ADDED]
     assert len([s for s in subscribers if s.handler is async_handler]) == 1
 
@@ -89,67 +89,69 @@ def test_subscribe_same_twice(async_handler):
 def test_is_subscribed(sync_handler):
     publisher = ProductUpdateEventPublisher()
     event = ProductUpdateEvent.PRODUCT_ADDED
-    assert publisher.is_subscribed(event) is False
-    publisher.subscribe(event, sync_handler)
-    assert publisher.is_subscribed(event) is True
+    assert publisher.is_subscribed(event=event) is False
+    publisher.subscribe(sync_handler, event)
+    assert publisher.is_subscribed(event=event) is True
 
 
 def test_unsubscribe_subscribed(async_handler):
     publisher = ProductUpdateEventPublisher()
-    assert ProductUpdateEvent.PRODUCT_ADDED not in publisher.async_subscribers
-    assert publisher.is_subscribed(ProductUpdateEvent.PRODUCT_ADDED) is False
-    publisher.subscribe(ProductUpdateEvent.PRODUCT_ADDED, async_handler)
-    assert publisher.is_subscribed(ProductUpdateEvent.PRODUCT_ADDED) is True
-    publisher.unsubscribe(ProductUpdateEvent.PRODUCT_ADDED, async_handler)
-    assert publisher.is_subscribed(ProductUpdateEvent.PRODUCT_ADDED) is False
+    event = ProductUpdateEvent.PRODUCT_ADDED
+    assert event not in publisher.async_subscribers
+    assert publisher.is_subscribed(event=event) is False
+    publisher.subscribe(async_handler, ProductUpdateEvent.PRODUCT_ADDED)
+    assert publisher.is_subscribed(event=event) is True
+    publisher.unsubscribe(async_handler, ProductUpdateEvent.PRODUCT_ADDED)
+    assert publisher.is_subscribed(event=event) is False
 
 
 def test_unsubscribe_unsubscribed(async_handler):
     publisher = ProductUpdateEventPublisher()
+    event = ProductUpdateEvent.PRODUCT_ADDED
+    assert event not in publisher.async_subscribers
+    assert publisher.is_subscribed(event=event) is False
+    publisher.unsubscribe(async_handler, ProductUpdateEvent.PRODUCT_ADDED)
     assert ProductUpdateEvent.PRODUCT_ADDED not in publisher.async_subscribers
-    assert publisher.is_subscribed(ProductUpdateEvent.PRODUCT_ADDED) is False
-    publisher.unsubscribe(ProductUpdateEvent.PRODUCT_ADDED, async_handler)
-    assert ProductUpdateEvent.PRODUCT_ADDED not in publisher.async_subscribers
-    assert publisher.is_subscribed(ProductUpdateEvent.PRODUCT_ADDED) is False
+    assert publisher.is_subscribed(event=event) is False
 
 
 def test_unsubscribe_all():
     publisher = ProductUpdateEventPublisher()
     event = ProductUpdateEvent.PRODUCT_ADDED
-    publisher.subscribe(event, new_async_handler())
-    publisher.subscribe(event, new_async_handler())
-    publisher.subscribe(event, new_sync_handler())
-    publisher.subscribe(event, new_sync_handler())
-    assert publisher.is_subscribed(event) is True
-    publisher.unsubscribe(event, None)
-    assert publisher.is_subscribed(event) is False
+    publisher.subscribe(new_async_handler(), event)
+    publisher.subscribe(new_async_handler(), event)
+    publisher.subscribe(new_sync_handler(), event)
+    publisher.subscribe(new_sync_handler(), event)
+    assert publisher.is_subscribed(event=event) is True
+    publisher.unsubscribe(None, event)
+    assert publisher.is_subscribed(event=event) is False
 
 
 def test_unsubscribe_all_empty():
     publisher = ProductUpdateEventPublisher()
     event = ProductUpdateEvent.PRODUCT_ADDED
-    assert publisher.is_subscribed(event) is False
-    publisher.unsubscribe(event, None)
-    assert publisher.is_subscribed(event) is False
+    assert publisher.is_subscribed(event=event) is False
+    publisher.unsubscribe(None, event)
+    assert publisher.is_subscribed(event=event) is False
 
 
 @pytest.mark.asyncio
 async def test_subscribe_and_post_and_unsubscribe(async_handler):
     publisher = ProductUpdateEventPublisher()
     event = ProductUpdateEvent.PRODUCT_ADDED
-    publisher.subscribe(event, async_handler)
+    publisher.subscribe(async_handler, event)
     product_new = Product(id_=123, name='foo')
     product_old = None
     publisher.post(event, product_new, product_old)
     async_handler.assert_called_once()
     async_handler.reset_mock()
-    publisher.unsubscribe(event, async_handler)
+    publisher.unsubscribe(async_handler, event)
     publisher.post(event, product_new, product_old)
     async_handler.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_post_no_bscriptions():
+async def test_post_no_subcriptions():
     publisher = ProductUpdateEventPublisher()
     publisher.post(ProductUpdateEvent.PRODUCT_ADDED, None, None)
 
@@ -158,7 +160,7 @@ async def test_post_no_bscriptions():
 @pytest.mark.parametrize("handler", [new_async_handler(), new_sync_handler()])
 async def test_subscribe_one_to_one_and_post_wrong(handler):
     publisher = ProductUpdateEventPublisher()
-    publisher.subscribe(ProductUpdateEvent.PRODUCT_ADDED, handler)
+    publisher.subscribe(handler, ProductUpdateEvent.PRODUCT_ADDED)
     publisher.post(ProductUpdateEvent.PRODUCT_REMOVED, None, None)
     handler.assert_not_called()
 
@@ -167,7 +169,7 @@ async def test_subscribe_one_to_one_and_post_wrong(handler):
 @pytest.mark.parametrize("handler", [new_async_handler(), new_sync_handler()])
 async def test_subscribe_one_to_one_and_post_once(handler):
     publisher = ProductUpdateEventPublisher()
-    publisher.subscribe(ProductUpdateEvent.PRODUCT_ADDED, handler)
+    publisher.subscribe(handler, ProductUpdateEvent.PRODUCT_ADDED)
     product_new = Product(id_=123, name='foo')
     product_old = None
     publisher.post(
@@ -179,8 +181,6 @@ async def test_subscribe_one_to_one_and_post_once(handler):
             'event': ProductUpdateEvent.PRODUCT_ADDED,
             'product_new': product_new,
             'product_old': product_old,
-            'location_id': 0,
-            'location_name': ''
         }
     )
     handler.assert_called_once_with(context)
@@ -190,7 +190,7 @@ async def test_subscribe_one_to_one_and_post_once(handler):
 @pytest.mark.parametrize("handler", [new_async_handler(), new_sync_handler()])
 async def test_subscribe_one_to_one_and_post_twice(handler):
     publisher = ProductUpdateEventPublisher()
-    publisher.subscribe(ProductUpdateEvent.PRODUCT_ADDED, handler)
+    publisher.subscribe(handler, ProductUpdateEvent.PRODUCT_ADDED)
     product_new = Product(id_=123, name='foo')
     product_old = None
     publisher.post(
@@ -207,8 +207,6 @@ async def test_subscribe_one_to_one_and_post_twice(handler):
             'event': ProductUpdateEvent.PRODUCT_ADDED,
             'product_new': None,
             'product_old': product_new,
-            'location_id': 0,
-            'location_name': ''
         }
     )
     handler.assert_called_with(last_context)
@@ -218,8 +216,8 @@ async def test_subscribe_one_to_one_and_post_twice(handler):
 @pytest.mark.parametrize("handler", [new_async_handler(), new_sync_handler()])
 async def test_subscribe_one_to_multiple_and_post_each_once(handler):
     publisher = ProductUpdateEventPublisher()
-    publisher.subscribe(ProductUpdateEvent.PRODUCT_ADDED, handler)
-    publisher.subscribe(ProductUpdateEvent.PRODUCT_REMOVED, handler)
+    publisher.subscribe(handler, ProductUpdateEvent.PRODUCT_ADDED)
+    publisher.subscribe(handler, ProductUpdateEvent.PRODUCT_REMOVED)
     product_new = Product(id_=123, name='foo')
     product_old = None
     publisher.post(
@@ -239,10 +237,10 @@ async def test_subscribe_multiple_to_multiple_and_post_multiple():
     handler_2 = new_async_handler()
     handler_3 = new_async_handler()
     handler_4 = new_async_handler()
-    publisher.subscribe(ProductUpdateEvent.PRODUCT_UPDATED, handler_1)
-    publisher.subscribe(ProductUpdateEvent.PRICE_UPDATED, handler_2)
-    publisher.subscribe(ProductUpdateEvent.QUANTITY_UPDATED, handler_3)
-    publisher.subscribe(ProductUpdateEvent.PIC_URL_UPDATED, handler_4)
+    publisher.subscribe(handler_1, ProductUpdateEvent.PRODUCT_UPDATED)
+    publisher.subscribe(handler_2, ProductUpdateEvent.PRICE_UPDATED)
+    publisher.subscribe(handler_3, ProductUpdateEvent.QUANTITY_UPDATED)
+    publisher.subscribe(handler_4, ProductUpdateEvent.OTHER_UPDATED)
     product_new = Product(
         id_=123, name='foo', quantity=1, price_full=90, price_curr=90
         )
@@ -268,8 +266,6 @@ async def test_subscribe_multiple_to_multiple_and_post_multiple():
             'event': ProductUpdateEvent.PRODUCT_UPDATED,
             'product_new': product_new,
             'product_old': product_old,
-            'location_id': 0,
-            'location_name': ''
         }
     )
     context_price_updated = ProductUpdateContext(
@@ -278,8 +274,6 @@ async def test_subscribe_multiple_to_multiple_and_post_multiple():
             'event': ProductUpdateEvent.PRICE_UPDATED,
             'product_new': product_new,
             'product_old': product_old,
-            'location_id': 0,
-            'location_name': ''
         }
     )
     context_quantity_updated = ProductUpdateContext(
@@ -288,8 +282,6 @@ async def test_subscribe_multiple_to_multiple_and_post_multiple():
             'event': ProductUpdateEvent.QUANTITY_UPDATED,
             'product_new': product_new,
             'product_old': product_old,
-            'location_id': 0,
-            'location_name': ''
         }
     )
     handler_1.assert_called_once_with(context_product_updated)

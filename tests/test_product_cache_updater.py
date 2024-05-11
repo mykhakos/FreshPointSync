@@ -53,19 +53,19 @@ def cache_updater_with_handlers() -> tuple[ProductCacheUpdater, Handlers]:
     publisher = ProductUpdateEventPublisher()
     handlers = Handlers()
     publisher.subscribe(
-        ProductUpdateEvent.PRODUCT_ADDED, handlers.handler_add
+        handlers.handler_add, ProductUpdateEvent.PRODUCT_ADDED
         )
     publisher.subscribe(
-        ProductUpdateEvent.PRODUCT_REMOVED, handlers.handler_delete
+        handlers.handler_delete, ProductUpdateEvent.PRODUCT_REMOVED
         )
     publisher.subscribe(
-        ProductUpdateEvent.PRODUCT_UPDATED, handlers.handler_update
+        handlers.handler_update, ProductUpdateEvent.PRODUCT_UPDATED
         )
     publisher.subscribe(
-        ProductUpdateEvent.QUANTITY_UPDATED, handlers.handler_update_quantity
+        handlers.handler_update_quantity, ProductUpdateEvent.QUANTITY_UPDATED
         )
     publisher.subscribe(
-        ProductUpdateEvent.PRICE_UPDATED, handlers.handler_update_price
+        handlers.handler_update_price, ProductUpdateEvent.PRICE_UPDATED
         )
     return ProductCacheUpdater(products, publisher), handlers
 
@@ -139,7 +139,8 @@ async def test_update_product(cache_updater_with_handlers):
         pic_url="pic2.jpg"
         )
     product_cached = updater.products[2]  # 2 is the product_id
-    updater.update_product(product, product_cached)
+    diff = product_cached.diff(product)
+    updater.update_product(product, product_cached, diff)
     await asyncio.sleep(0.1)  # allow time for the event to be processed
     assert updater.products[2] == product
     handlers.handler_update.assert_called_once()

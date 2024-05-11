@@ -35,6 +35,7 @@ dependencies = [
     "aiohttp",
     "beautifulsoup4",
     "lxml",
+    "pydantic",
     "unidecode"
 ]
 

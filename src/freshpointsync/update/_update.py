@@ -6,8 +6,6 @@ import logging
 import sys
 
 from concurrent.futures import Executor
-from dataclasses import dataclass
-from functools import cached_property
 from typing import (
     cast,
     Any,
@@ -38,6 +36,7 @@ from ..product._product import Product, DiffValueTuple
 
 
 logger = logging.getLogger('freshpointsync.update')
+"""Logger for the `freshpointsync.update` module."""
 
 
 T = TypeVar('T')
@@ -396,17 +395,28 @@ class ProductUpdateEvent(enum.Enum):
     """Indicates that a product has been removed from the product page."""
 
 
-@dataclass(frozen=True)
 class ProductUpdateContext(collections.abc.Mapping):
     """An update event context data wrapper for product update events with
-    a mapping-like access to the data along with direct access to
-    specific product state information, such as `product_new`, `product_old`,
-    `location_id`, and `location_name`.
+    a mapping-like access to the data along with direct access to specific
+    product state information via the `product_old` and `product_new` keys and
+    the event type via the `event` key.
 
     This class is designed to encapsulate the update event context data
     passed to event handlers during product update events.
     """
-    __kwargs: dict[Any, Any]
+    def __init__(self, __kwargs: dict[Any, Any]) -> None:
+        super().__init__()
+        self.__kwargs = __kwargs
+
+    def __str__(self) -> str:
+        """Returns a string representation of the context data."""
+        return str(self.__kwargs)
+
+    def __repr__(self) -> str:
+        """Returns a string representation of the context data object
+        initialization.
+        """
+        return f'{self.__class__.__name__}({self.__kwargs})'
 
     def __getitem__(self, key: Any) -> Any:
         """Returns the value for the given key from the internal context data.
@@ -436,67 +446,79 @@ class ProductUpdateContext(collections.abc.Mapping):
         return len(self.__kwargs)
 
     def __get_product_attr(self, attr: str, default: T) -> T:
+        """Retrieve a specific attribute from the product state data.
+
+        Args:
+            attr (str): The attribute to retrieve from the product state data.
+            default (T): The default value to return if the attribute
+                is not found.
+
+        Returns:
+            T: The value of the attribute if found, otherwise the default value.
+        """
+        if attr in self.__kwargs:
+            return self.__kwargs[attr]
         if self.product_new:
             return getattr(self.product_new, attr)
         elif self.product_old:
             return getattr(self.product_old, attr)
         return default
 
-    @cached_property
+    @property
     def event(self) -> ProductUpdateEvent:
         """The type of product update event that occurred."""
         return self.__kwargs['event']
 
-    @cached_property
+    @property
     def product_id(self) -> int:
         """ID of the product being updated.
         If not available, defaults to 0.
         """
         return self.__get_product_attr('id_', 0)
 
-    @cached_property
+    @property
     def product_name(self) -> str:
         """Name of the product being updated.
         If not available, defaults to an empty string.
         """
         return self.__get_product_attr('name', '')
 
-    @cached_property
+    @property
     def product_name_lowercase_ascii(self) -> str:
         """Lowercase ASCII representation of the product name.
         If not available, defaults to an empty string.
         """
         return self.__get_product_attr('name_lowercase_ascii', '')
 
-    @cached_property
+    @property
     def location_id(self) -> int:
         """ID of the product location.
         If not available, defaults to 0.
         """
         return self.__get_product_attr('location_id', 0)
 
-    @cached_property
+    @property
     def location_name(self) -> str:
         """Name of the product location.
         If not available, defaults to an empty string.
         """
         return self.__get_product_attr('location_name', '')
 
-    @cached_property
+    @property
     def location_name_lowercase_ascii(self) -> str:
         """Lowercase ASCII representation of the location name.
         If not available, defaults to an empty string.
         """
         return self.__get_product_attr('location_name_lowercase_ascii', '')
 
-    @cached_property
+    @property
     def product_new(self) -> Optional[Product]:
         """New state of the product after the update.
         If not available, defaults to None.
         """
         return self.__kwargs['product_new']
 
-    @cached_property
+    @property
     def product_old(self) -> Optional[Product]:
         """Previous state of the product before the update.
         If not available, defaults to None.
@@ -724,8 +746,7 @@ class ProductUpdateEventPublisher:
         call_safe: bool = True,
         handler_done_callback: Optional[Callable[[asyncio.Future], Any]] = None
     ) -> None:
-        """
-        Subscribe a synchronous handler to a specific product update event.
+        """Subscribe a synchronous handler to a specific product update event.
 
         This internal method adds a synchronous handler to the event's
         subscribers list, ensuring that the handler and its
@@ -888,6 +909,8 @@ class ProductUpdateEventPublisher:
         """Check if there are any subscribers for the given event(s).
 
         Args:
+            handler (Optional[Handler], optional): The handler to check for
+                subscription. If None, all handlers are checked.
             event (Union[ProductUpdateEvent, Iterable[ProductUpdateEvent],\
             None], optional): The type of product update event(s) to check for
                 subscribers. If None, all events are checked.

@@ -3,7 +3,7 @@ name = "freshpointsync"
 version = "0.1.0"
 description = "Freshpoint.cz web page data parser and syncer."
 readme = "README.md"
-license = {file = "LICENSE"}
+license = { file = "LICENSE" }
 authors = [
   { name = "Konstantin Mykhailov", email = "constantinemykhailov@gmail.com" },
 ]
@@ -33,6 +33,7 @@ keywords = ["freshpoint", "freshpoint.cz"]
 requires-python = ">=3.8"
 dependencies = [
     "aiohttp",
+    "certifi",
     "beautifulsoup4",
     "lxml",
     "pydantic",

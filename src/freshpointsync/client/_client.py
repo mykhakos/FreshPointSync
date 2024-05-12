@@ -1,8 +1,9 @@
 import asyncio
 import aiohttp
+import certifi
 import logging
+import ssl
 
-import os
 
 from typing import Any, Optional, Union
 
@@ -225,6 +226,7 @@ class ProductDataFetchClient:
     async def _fetch_once(
         self,
         session: aiohttp.ClientSession,
+        ssl_context: ssl.SSLContext,
         relative_url: str,
         timeout: aiohttp.ClientTimeout
     ) -> Optional[str]:
@@ -234,6 +236,8 @@ class ProductDataFetchClient:
         Args:
             session (aiohttp.ClientSession): The client session to use for
                 the request.
+            ssl_context (ssl.SSLContext): The SSL context to use
+                for the request.
             relative_url (str): The relative URL to fetch data from.
             timeout (aiohttp.ClientTimeout): The timeout for the request.
 
@@ -242,7 +246,9 @@ class ProductDataFetchClient:
                 or None if an error occurred.
         """
         try:
-            async with session.get(relative_url, timeout=timeout) as response:
+            async with session.get(
+                relative_url, ssl_context=ssl_context, timeout=timeout
+            ) as response:
                 if response.status == 200:
                     logger.debug(
                         'Successfully fetched data from "%s"', response.url
@@ -259,9 +265,10 @@ class ProductDataFetchClient:
                 self.BASE_URL, relative_url
                 )
         except Exception as exc:
+            exc_type = exc.__class__.__name__
             logger.error(
-                'Exception occurred while fetching data from "%s%s": %s',
-                self.BASE_URL, relative_url, str(exc)
+                'Exception "%s" occurred while fetching data from "%s%s": %s',
+                exc_type, self.BASE_URL, relative_url, str(exc)
                 )
         return None
 
@@ -286,13 +293,16 @@ class ProductDataFetchClient:
         """
         args = self._check_fetch_args(location_id, timeout, max_retries)
         session, relative_url, timeout, max_retries = args
+        ssl_context = ssl.create_default_context(cafile=certifi.where())
         attempt = 0
         while attempt < max_retries:
             logger.info(
                 'Fetching data from "%s%s" (attempt %s of %s)',
                 self.BASE_URL, relative_url, attempt + 1, max_retries
                 )
-            text = await self._fetch_once(session, relative_url, timeout)
+            text = await self._fetch_once(
+                session, ssl_context, relative_url, timeout
+                )
             if text is not None:
                 return text
             attempt += 1

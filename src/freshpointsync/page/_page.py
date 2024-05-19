@@ -62,19 +62,19 @@ class ProductPageData(BaseModel):
         return ProductDataFetchClient.get_page_url(self.location_id)
 
     @property  # not cached because products may be missing upon initialization
-    def location_name(self) -> str:
+    def location(self) -> str:
         """Name of the product location. Infers from the first product in 
         the products dictionary. If the dictionary is empty, returns an empty
         string.
         """
         for product in self.products.values():
-            return product.location_name
+            return product.location
         return ''
 
-    @property  # not cached because "location_name" is not cached
-    def location_name_lowercase_ascii(self) -> str:
+    @property  # not cached because "location" is not cached
+    def location_lowercase_ascii(self) -> str:
         """Lowercase ASCII representation of the location name."""
-        return normalize_text(self.location_name)
+        return normalize_text(self.location)
 
     @property
     def product_names(self) -> list[str]:

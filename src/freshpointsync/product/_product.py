@@ -46,7 +46,7 @@ class Product(BaseModel):
             URL of the product image. Default URL is used if not provided.
         location_id (int):
             Unique identifier or the product page URL. Defaults to 0.
-        location_name (str):
+        location (str):
             Name of the product location. Defaults to an empty string value.
         timestamp (int):
             Timestamp of the product instance initialization.
@@ -78,7 +78,7 @@ class Product(BaseModel):
     """URL of the product image."""
     location_id: int = Field(default=0)
     """Unique identifier of the product page URL."""
-    location_name: str = Field(default='')
+    location: str = Field(default='')
     """Name of the product location."""
     timestamp: float = Field(default_factory=time.time)
     """Timestamp of the product creation."""
@@ -104,9 +104,9 @@ class Product(BaseModel):
         return unidecode(self.category.strip()).casefold()
 
     @property
-    def location_name_lowercase_ascii(self) -> str:
+    def location_lowercase_ascii(self) -> str:
         """Lowercase ASCII representation of the product location name."""
-        return unidecode(self.location_name.strip()).casefold()
+        return unidecode(self.location.strip()).casefold()
 
     @property
     def discount_rate(self) -> float:

@@ -22,17 +22,17 @@ class TestProductPageData:
         with pytest.raises(ValueError):
             product_page_data.location_id = 2
 
-    def test_location_name(self, product_page_data):
-        assert product_page_data.location_name == ""
-        product = Product(id_=1, location_name="L'Oréal Česká republika")
+    def test_location(self, product_page_data):
+        assert product_page_data.location == ""
+        product = Product(id_=1, location="L'Oréal Česká republika")
         product_page_data.products[1] = product
-        expected_location_name = "L'Oréal Česká republika"
-        actual_location_name = product_page_data.location_name
-        assert actual_location_name == expected_location_name
+        expected_location = "L'Oréal Česká republika"
+        actual_location = product_page_data.location
+        assert actual_location == expected_location
 
-    def test_location_name_lowercase_ascii(self, product_page_data):
-        product = Product(id_=1, location_name="L'Oréal Česká republika")
+    def test_location_lowercase_ascii(self, product_page_data):
+        product = Product(id_=1, location="L'Oréal Česká republika")
         product_page_data.products[1] = product
-        expected_location_name = "l'oreal ceska republika"
-        actual_location_name = product_page_data.location_name_lowercase_ascii
-        assert actual_location_name == expected_location_name
+        expected_location = "l'oreal ceska republika"
+        actual_location = product_page_data.location_lowercase_ascii
+        assert actual_location == expected_location

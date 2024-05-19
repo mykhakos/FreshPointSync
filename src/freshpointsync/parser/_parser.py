@@ -413,7 +413,7 @@ class ProductPageHTMLParser:
             price_full=price_full,
             pic_url=ProductHTMLParser.find_pic_url(product_data),
             location_id=self.page_id,
-            location_name=self.location_name
+            location=self.location_name
             )
 
     def find_product(

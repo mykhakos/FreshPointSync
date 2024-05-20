@@ -46,16 +46,3 @@ and analyze its contents:
 
     if __name__ == '__main__':
         asyncio.run(main())
-
-
-Explore the library's functionality by reading the exampes guide.
-
-
-.. toctree::
-   :maxdepth: 3
-   :caption: Contents:
-
-   product/index
-   product_page/index
-   product_page_hub/index
-   api_reference

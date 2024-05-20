@@ -46,6 +46,8 @@ dependencies = [
 [project.optional-dependencies]
 docs = [
   "sphinx",
+  "sphinx_copybutton",
+  "autodoc-pydantic",
   "sphinx_rtd_theme",
 ]
 test = [

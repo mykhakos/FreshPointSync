@@ -2,7 +2,7 @@
 name = "freshpointsync"
 version = "0.1.0"
 description = "Freshpoint.cz web page data parser and syncer."
-readme = "README.md"
+readme = "README.rst"
 license = { file = "LICENSE" }
 authors = [
   { name = "Konstantin Mykhailov", email = "constantinemykhailov@gmail.com" },

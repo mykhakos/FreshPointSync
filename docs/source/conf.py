@@ -17,10 +17,10 @@ extensions = [
     "sphinx.ext.doctest",
     "sphinx.ext.todo",
     "sphinx.ext.napoleon",
-    "sphinxcontrib.autodoc_pydantic"
+    "sphinxcontrib.autodoc_pydantic",
+    "sphinx_copybutton",
 ]
 
-templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
 
@@ -29,6 +29,11 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
 html_theme = 'sphinx_rtd_theme'
 html_static_path = ['_static']
+html_logo = "_static/logo_library.svg"
+html_theme_options = {
+    'logo_only': True,
+    'display_version': False,
+}
 
 autodoc_typehints = "description"
 autodoc_member_order = "bysource"
@@ -39,3 +44,8 @@ autodoc_default_options = {
 }
 
 add_module_names = False
+
+
+# -- Options for sphinx_copybutton -------------------------------------------
+copybutton_prompt_text = r">>> |\.\.\. |\$ "
+copybutton_prompt_is_regexp = True

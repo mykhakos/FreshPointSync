@@ -1,9 +1,9 @@
 ==============================================================
-FreshPointSync: Freshpoint.cz web page data parser and syncer.
+FreshPointSync: FreshPoint.cz web page data parser and syncer.
 ==============================================================
 
 FreshPointSync delivers an efficient asynchronous interface designed for
-extracting and tracking data from `Freshpoint <https://my.freshpoint.cz/>`__
+extracting and tracking data from `FreshPoint <https://my.freshpoint.cz/>`__
 product webpages.
 
 | `📁 Source files <https://github.com/mykhakos/FreshPointSync>`__

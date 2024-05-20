@@ -9,7 +9,7 @@ product webpages.
 | `📁 Source files <https://github.com/mykhakos/FreshPointSync>`__
 | `⚠️ Issue tracker <https://github.com/mykhakos/FreshPointSync/issues>`__
 | `📦 PyPI <https://pypi.org/project/freshpointsync/>`__
-| `📜 Documentation <https://github.com/mykhakos/FreshPointSync>`__
+| `📜 Documentation <https://freshpointsync.readthedocs.io/en/latest/>`__
 
 
 Installation

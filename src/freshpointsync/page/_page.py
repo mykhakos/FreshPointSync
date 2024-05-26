@@ -18,7 +18,7 @@ from ..parser._parser import (
 )
 from ..product._product import Product
 from ..update._update import (
-    SafeAsyncTaskRunner,
+    CallableRunner,
     ProductUpdateEvent,
     ProductUpdateEventPublisher,
     ProductCacheUpdater,
@@ -116,7 +116,7 @@ class ProductPage:
         self._data = self._validate_data(location_id, data)
         self._client = client or ProductDataFetchClient()
         self._publisher = ProductUpdateEventPublisher()
-        self._runner = SafeAsyncTaskRunner(executor=None)
+        self._runner = CallableRunner(executor=None)
         self._update_forever_task: Optional[asyncio.Task] = None
         self._updater = ProductCacheUpdater(
             self._data.products, self._publisher
@@ -206,6 +206,7 @@ class ProductPage:
             ProductUpdateEvent, Iterable[ProductUpdateEvent], None
             ] = None,
         call_safe: bool = True,
+        call_blocking: bool = True,
         handler_done_callback: Optional[Callable[[asyncio.Future], Any]] = None
     ) -> None:
         """Subscribe a handler to specific product update event(s). The handler
@@ -226,6 +227,12 @@ class ProductPage:
             call_safe (bool, optional): If True, exceptions raised by
                 the handler are caught and logged. If False, exceptions are
                 propagated and must be handled by the caller. Defaults to True.
+            call_blocking (bool, optional): If True, the synchronous handler
+                is executed in a blocking manner, i.e., called directly without
+                using an executor. If False, the synchronous handler is executed
+                in a non-blocking manner in a separate thread. Asynchronous
+                handlers are always executed in a non-blocking manner, this
+                parameter has no effect on them. Defaults to True.
             handler_done_callback (Optional[Callable[[asyncio.Future], Any]]):
                 Optional function to be called when the handler completes
                 execution. Depending on the type of the handler, the callback
@@ -237,7 +244,7 @@ class ProductPage:
             TypeError: If the handler does not have a valid signature.
         """
         self._publisher.subscribe(
-            handler, event, call_safe, handler_done_callback
+            handler, event, call_safe, call_blocking, handler_done_callback
             )
 
     def unsubscribe_from_update(
@@ -630,7 +637,7 @@ class ProductPageHub:
             }
         self._publisher = ProductUpdateEventPublisher()
         executor = ProcessPoolExecutor() if enable_multiprocessing else None
-        self._runner = SafeAsyncTaskRunner(executor=executor)
+        self._runner = CallableRunner(executor=executor)
         self._update_forever_task: Optional[asyncio.Task] = None
     
     def __str__(self) -> str:
@@ -680,6 +687,7 @@ class ProductPageHub:
             ProductUpdateEvent, Iterable[ProductUpdateEvent], None
             ] = None,
         call_safe: bool = True,
+        call_blocking: bool = True,
         handler_done_callback: Optional[Callable[[asyncio.Future], Any]] = None
     ) -> None:
         """Subscribe a handler to specific product update event(s) for all
@@ -700,6 +708,12 @@ class ProductPageHub:
             call_safe (bool, optional): If True, exceptions raised by
                 the handler are caught and logged. If False, exceptions are
                 propagated and must be handled by the caller. Defaults to True.
+            call_blocking (bool, optional): If True, the synchronous handler
+                is executed in a blocking manner, i.e., called directly without
+                using an executor. If False, the synchronous handler is executed
+                in a non-blocking manner in a separate thread. Asynchronous
+                handlers are always executed in a non-blocking manner, this
+                parameter has no effect on them. Defaults to True.
             handler_done_callback (Optional[Callable[[asyncio.Future], Any]]):
                 Optional function to be called when the handler completes
                 execution. Depending on the type of the handler, the callback
@@ -711,11 +725,11 @@ class ProductPageHub:
             TypeError: If the handler does not have a valid signature.
         """
         self._publisher.subscribe(
-            handler, event, call_safe, handler_done_callback
+            handler, event, call_safe, call_blocking, handler_done_callback
             )  # will not be directly invoked upon page updates
         for page in self._pages.values():
             page.subscribe_for_update(
-                handler, event, call_safe, handler_done_callback
+                handler, event, call_safe, call_blocking, handler_done_callback
                 )
 
     def unsubscribe_from_update(
@@ -830,7 +844,8 @@ class ProductPageHub:
                     page.subscribe_for_update(
                         handler_data.handler,
                         event,
-                        handler_data.exec_params.call_safe, 
+                        handler_data.exec_params.run_safe, 
+                        handler_data.exec_params.run_blocking,
                         handler_data.exec_params.done_callback
                         )
         # add common context

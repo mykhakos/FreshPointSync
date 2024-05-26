@@ -1,4 +1,5 @@
 from ._update import (
+    CallableRunner,
     ProductUpdateContext,
     ProductUpdateEvent,
     ProductUpdateEventPublisher,
@@ -11,6 +12,7 @@ from ._update import (
 )
 
 __all__ = [
+    'CallableRunner',
     'ProductUpdateContext',
     'ProductUpdateEvent',
     'ProductUpdateEventPublisher',

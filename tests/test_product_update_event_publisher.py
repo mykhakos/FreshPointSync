@@ -44,7 +44,7 @@ def test_subscribe_sync(sync_handler):
     assert event not in publisher.async_subscribers
     handler_data = publisher.sync_subscribers[event][0]
     assert sync_handler == handler_data.handler
-    assert handler_data.exec_params.call_safe is True
+    assert handler_data.exec_params.run_safe is True
     assert handler_data.exec_params.done_callback is None
     sync_handler.assert_not_called()
 
@@ -56,7 +56,7 @@ def test_subscribe_async(async_handler):
     assert event not in publisher.sync_subscribers
     handler_data = publisher.async_subscribers[event][0]
     assert async_handler == handler_data.handler
-    assert handler_data.exec_params.call_safe is True
+    assert handler_data.exec_params.run_safe is True
     assert handler_data.exec_params.done_callback is None
     async_handler.assert_not_called()
 
@@ -67,13 +67,13 @@ def test_subscribe_with_params(async_handler):
     publisher.subscribe(
         async_handler,
         event,
-        call_safe=False,
+        run_safe=False,
         handler_done_callback=handler_callback
         )
     assert event not in publisher.sync_subscribers
     handler_data = publisher.async_subscribers[event][0]
     assert async_handler == handler_data.handler
-    assert handler_data.exec_params.call_safe is False
+    assert handler_data.exec_params.run_safe is False
     assert handler_data.exec_params.done_callback is handler_callback
     async_handler.assert_not_called()
 
@@ -158,7 +158,7 @@ async def test_post_no_subcriptions():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("handler", [new_async_handler(), new_sync_handler()])
-async def test_subscribe_one_to_one_and_post_wrong(handler):
+async def test_subscribe_one_to_one_and_post_other(handler):
     publisher = ProductUpdateEventPublisher()
     publisher.subscribe(handler, ProductUpdateEvent.PRODUCT_ADDED)
     publisher.post(ProductUpdateEvent.PRODUCT_REMOVED, None, None)

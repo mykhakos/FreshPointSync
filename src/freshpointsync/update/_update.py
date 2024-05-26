@@ -42,19 +42,19 @@ logger = logging.getLogger('freshpointsync.update')
 T = TypeVar('T')
 
 
-class SafeAsyncTaskRunner:
-    """A utility for running asynchronous and synchronous tasks in
-    a non-blocking manner with optional error handling and
-    the ability to await or cancel all running tasks.
+class CallableRunner:
+    """A utility for running asynchronous and synchronous callables in
+    a non-blocking or blocking manner (the latter is only relevant for
+    synchronous callables) with optional error handling and the ability to
+    await or cancel all running tasks.
     """
 
     def __init__(self, executor: Optional[Executor] = None) -> None:
-        """Initialize a `SafeAsyncTaskRunner` instance with
-        an optional executor.
+        """Initialize a `CallableRunner` instance with an optional executor.
 
         Args:
             executor (Optional[Executor]): A `concurrent.futures.Executor`
-                object to be used for running synchronous functions in
+                object to be used for running synchronous callables in
                 a non-blocking manner. If None, a default executor is used.
                 For more information, see the asyncio event loop's
                 `run_in_executor` documentation. Defaults to None.
@@ -169,7 +169,7 @@ class SafeAsyncTaskRunner:
             awaitable (Awaitable[T]): The awaitable object to run.
 
         Returns:
-            Optional[T]: The result of the awaitable if it completes\
+            Optional[T]: The result of the awaitable if it completes
                 successfully, `None` if an exception occurs.
         """
         try:
@@ -188,12 +188,12 @@ class SafeAsyncTaskRunner:
         run_safe: bool = True,
         done_callback: Optional[Callable[[asyncio.Task], Any]] = None
     ) -> asyncio.Task[Optional[T]]:
-        """Schedule a coroutine function to be run,
+        """Schedule a function that returns a coroutine to be run,
         optionally with error handling and a completion callback.
 
         This method is specifically designed for running coroutine functions
-        that are asynchronous in nature. Providing a synchronous (non-async)
-        function to this method will fail at runtime.
+        that are asynchronous in nature. Providing a synchronous function to
+        this method will fail at runtime.
 
         Args:
             func (Callable[..., Coroutine[Any, Any, T]]): The coroutine
@@ -252,7 +252,7 @@ class SafeAsyncTaskRunner:
             *args: Arguments to run the function with.
 
         Returns:
-            Optional[T]: The result of the function if it completes\
+            Optional[T]: The result of the function if it completes
                 successfully, `None` if an exception occurs.
         """
         try:
@@ -269,15 +269,19 @@ class SafeAsyncTaskRunner:
         func: Callable[..., T],
         *func_args,
         run_safe: bool = True,
+        run_blocking: bool = True,
         done_callback: Optional[Callable[[asyncio.Future], Any]] = None
     ) -> asyncio.Future[Optional[T]]:
-        """Schedule a synchronous function to be run in a non-blocking manner,
-        optionally with error handling and a completion callback.
+        """Schedule a synchronous function to be run in a blocking or
+        a non-blocking manner, optionally with error handling and
+        a completion callback.
 
         This method is specifically designed for synchronous functions that
-        block. It utilizes an executor, allowing for concurrent execution of
-        such functions without blocking the asyncio event loop. Providing
-        an asynchronous (async) function will fail at runtime.
+        block. If `run_blocking` is set to True, the function is executed
+        directly without using an executor. If `run_blocking` is set to False,
+        the function is executed in a non-blocking manner using an executor,
+        allowing for concurrent execution of multiple functions. Providing
+        an asynchronous function will fail at runtime.
 
         Args:
             func (Callable[..., T]): The synchronous function to be run.
@@ -287,37 +291,57 @@ class SafeAsyncTaskRunner:
                 is set to None in case of an error. If False, exceptions
                 are propagated and must be handled by the caller.
                 Defaults to True.
+            run_blocking (bool): If True, the synchronous function is executed
+                in a blocking manner, i.e., called directly without using an
+                executor. If False, the function is executed in a non-blocking
+                manner in a separate thread. Defaults to True.
             done_callback (Optional[Callable[[asyncio.Future], Any]]):
                 An optional callback to be called when the future completes.
 
         Returns:
-            asyncio.Future[Optional[T]]: An asyncio future object representing\
-                the scheduled execution of the synchronous function.\
-                The future can be awaited to obtain the result of the function\
-                call. Note that cancellation of the future is not possible if\
-                the function is already running (for more information, see\
-                the `concurrent.futures` documentation on cancellation of\
+            asyncio.Future[Optional[T]]: An asyncio future object representing
+                the scheduled execution of the synchronous function.
+                The future can be awaited to obtain the result of the function
+                call. Note that cancellation of the future is not possible if
+                the function is already running (for more information, see
+                the `concurrent.futures` documentation on cancellation of
                 the future objects).
         """
+        # get the event loop, prepare for scheduling the future
         name = self._get_func_name(func)
-        logger.debug('Scheduling future "%s"', name)
         loop = asyncio.get_running_loop()
         future: asyncio.Future[Optional[T]]
-        if run_safe:
-            future = loop.run_in_executor(
-                self.executor, self._run_sync_safe, func, *func_args
-                )
+        # schedule the future based on the blocking mode
+        if run_blocking:
+            logger.debug('Running "%s" in blocking mode', name)
+            future = loop.create_future()
+            try:
+                if run_safe:
+                    result = self._run_sync_safe(func, *func_args)
+                else:
+                    result = func(*func_args)
+                future.set_result(result)
+            except Exception as e:
+                future.set_exception(e)
         else:
-            future = loop.run_in_executor(
-                self.executor, func, *func_args
-                )
-        future.add_done_callback(self.futures.discard)
+            logger.debug('Scheduling future "%s"', name)
+            if run_safe:
+                future = loop.run_in_executor(
+                    self.executor, self._run_sync_safe, func, *func_args
+                    )
+            else:
+                future = loop.run_in_executor(
+                    self.executor, func, *func_args
+                    )
+            self.futures.add(future)
+            future.add_done_callback(self.futures.discard)
+        # add a callback to log the completion of the future
         future.add_done_callback(
             lambda f: self._log_task_or_future_done(f, "Future", name)
             )
+        # add an optional callback to be called when the future completes
         if done_callback:
             future.add_done_callback(done_callback)
-        self.futures.add(future)
         return future
 
     async def await_all(self) -> None:
@@ -386,7 +410,8 @@ class ProductUpdateEvent(enum.Enum):
     """Indicates that the stock quantity of a product has been updated."""
     PRICE_UPDATED = "price_updated"
     """Indicates that the pricing of a product has changed, including both
-    full price and current sale price."""
+    full price and current sale price.
+    """
     OTHER_UPDATED = "other_updated"
     """Indicates an update to the product's metadata,
     for example, a change of the illustration picture URL.
@@ -550,9 +575,9 @@ class HandlerValidator:
                 (a function, a method, or an object with a `__call__` method).
 
         Returns:
-            tuple(bool, bool): A tuple of two boolean values, where\
-                the first value indicates whether the handler is valid (True)\
-                or not (False) and the second value indicates whether\
+            tuple(bool, bool): A tuple of two boolean values, where
+                the first value indicates whether the handler is valid (True)
+                or not (False) and the second value indicates whether
                 the handler is an asynchronous (True) or synchronous (False).
         """
         if not callable(handler):
@@ -576,7 +601,7 @@ class HandlerValidator:
             handler: The handler to be validated.
 
         Returns:
-            bool: True if the handler is valid and asynchronous,\
+            bool: True if the handler is valid and asynchronous,
                 otherwise, False.
         """
         is_valid, is_async = cls._is_valid_is_async(handler)
@@ -591,7 +616,7 @@ class HandlerValidator:
             handler: The handler to be validated.
 
         Returns:
-            bool: True if the handler is valid and synchronous,\
+            bool: True if the handler is valid and synchronous,
                 otherwise, False.
         """
         is_valid, is_async = cls._is_valid_is_async(handler)
@@ -651,10 +676,15 @@ of type `ProductUpdateContext` and returns a coroutine that resolves to `None`.
 
 class HandlerExecParamsTuple(NamedTuple):
     """A named tuple for storing handler execution parameters."""
-    call_safe: bool
+    run_safe: bool
     """A flag indicating whether the handler should be executed in a "safe"
-    manner, meaning any exceptions raised by the handler will be caught and
-    handled.
+    manner, meaning any exceptions raised by the handler will be caught,
+    logged, and suppressed.
+    """
+    run_blocking: bool
+    """A flag indicating whether a synchronous handler should be executed in
+    a blocking manner, i.e., called directly without using a separate
+    `ThreadPoolExecutor`. This flag is ignored for asynchronous handlers.
     """
     done_callback: Optional[Callable[[asyncio.Future], Any]]
     """An optional callback function to be called when the handler completes
@@ -694,7 +724,7 @@ class ProductUpdateEventPublisher:
     """
     def __init__(self) -> None:
         self.context: dict[Any, Any] = {}  # global persistent context
-        self.runner = SafeAsyncTaskRunner()
+        self.runner = CallableRunner()
         self.sync_subscribers: dict[ProductUpdateEvent, SyncHandlerList] = {}
         self.async_subscribers: dict[ProductUpdateEvent, AsyncHandlerList] = {}
 
@@ -713,7 +743,7 @@ class ProductUpdateEventPublisher:
                 the current subscribers.
 
         Returns:
-            bool: True if the handler is found in the list of subscribers,\
+            bool: True if the handler is found in the list of subscribers,
                 otherwise, False.
         """
         return any(existing.handler == handler for existing in subscribers)
@@ -743,8 +773,9 @@ class ProductUpdateEventPublisher:
         self,
         event: ProductUpdateEvent,
         handler: Handler,
-        call_safe: bool = True,
-        handler_done_callback: Optional[Callable[[asyncio.Future], Any]] = None
+        run_safe: bool,
+        run_blocking: bool,
+        handler_done_callback: Optional[Callable[[asyncio.Future], Any]]
     ) -> None:
         """Subscribe a synchronous handler to a specific product update event.
 
@@ -755,23 +786,25 @@ class ProductUpdateEventPublisher:
         Args:
             event: The product update event to subscribe the handler to.
             handler: The synchronous handler to be subscribed.
-            call_safe: Indicates whether the handler should be called in
+            run_safe: Indicates whether the handler should be called in
                 a "safe" manner, with exceptions caught and handled.
             handler_done_callback: An optional callback function to be called
                 when the handler completes its execution.
         """
         subscribers = self.sync_subscribers.setdefault(event, [])
         if not self._is_in_subscribers_list(handler, subscribers):
-            params = HandlerExecParamsTuple(call_safe, handler_done_callback)
             handler = cast(SyncHandler, handler)
+            params = HandlerExecParamsTuple(
+                run_safe, run_blocking, handler_done_callback
+                )
             subscribers.append(HandlerDataTuple(handler, params))
 
     def _subscribe_async(
         self,
         event: ProductUpdateEvent,
         handler: Handler,
-        call_safe: bool = True,
-        handler_done_callback: Optional[Callable[[asyncio.Future], Any]] = None
+        run_safe: bool,
+        handler_done_callback: Optional[Callable[[asyncio.Future], Any]]
     ) -> None:
         """Subscribe an asynchronous handler to a specific product update
         event.
@@ -783,15 +816,17 @@ class ProductUpdateEventPublisher:
         Args:
             event: The product update event to subscribe the handler to.
             handler: The asynchronous handler to be subscribed.
-            call_safe: Indicates whether the handler should be called in
+            run_safe: Indicates whether the handler should be called in
                 a "safe" manner, with exceptions caught and handled.
             handler_done_callback: An optional callback function to be called
                 when the handler completes its execution.
         """
         subscribers = self.async_subscribers.setdefault(event, [])
         if not self._is_in_subscribers_list(handler, subscribers):
-            params = HandlerExecParamsTuple(call_safe, handler_done_callback)
             handler = cast(AsyncHandler, handler)
+            params = HandlerExecParamsTuple(
+                run_safe, False, handler_done_callback
+                )
             subscribers.append(HandlerDataTuple(handler, params))
 
     @staticmethod
@@ -801,7 +836,7 @@ class ProductUpdateEventPublisher:
         """Validate the provided event(s) and return a list of event objects.
 
         Args:
-            event (Union[ProductUpdateEvent, Iterable[ProductUpdateEvent],\
+            event (Union[ProductUpdateEvent, Iterable[ProductUpdateEvent],
             None]): The event or events to validate.
 
         Raises:
@@ -824,7 +859,8 @@ class ProductUpdateEventPublisher:
         event: Union[
             ProductUpdateEvent, Iterable[ProductUpdateEvent], None
             ] = None,
-        call_safe: bool = True,
+        run_safe: bool = True,
+        run_blocking: bool = True,
         handler_done_callback: Optional[Callable[[asyncio.Future], Any]] = None
     ) -> None:
         """Subscribe a handler to specific product update event(s). The handler
@@ -838,13 +874,17 @@ class ProductUpdateEventPublisher:
         Args:
             handler (Handler): The function or callable to invoke for
                 the event(s).
-            event (Union[ProductUpdateEvent, Iterable[ProductUpdateEvent],\
+            event (Union[ProductUpdateEvent, Iterable[ProductUpdateEvent],
             None], optional): The type of product update event(s) to
                 subscribe to. If None, the handler will be subscribed to
                 all events.
-            call_safe (bool, optional): If True, exceptions raised by
+            run_safe (bool, optional): If True, exceptions raised by
                 the handler are caught and logged. If False, exceptions are
                 propagated and must be handled by the caller. Defaults to True.
+            run_blocking (bool, optional): If True, synchronous handlers are
+                executed in a blocking manner, i.e., called directly without
+                using an executor. If False, synchronous handlers are executed
+                in a non-blocking manner in a separate thread. Defaults to True.
             handler_done_callback (Optional[Callable[[asyncio.Future], Any]]):
                 Optional function to be called when the handler completes
                 execution. Depending on the type of the handler, the callback
@@ -861,11 +901,15 @@ class ProductUpdateEventPublisher:
             raise TypeError("Handler signature is invalid.")
         callback = handler_done_callback
         if is_async:
-            for e in events:
-                self._subscribe_async(e, handler, call_safe, callback)
+            for event in events:
+                self._subscribe_async(
+                    event, handler, run_safe, callback
+                    )
         else:
-            for e in events:
-                self._subscribe_sync(e, handler, call_safe, callback)
+            for event in events:
+                self._subscribe_sync(
+                    event, handler, run_safe, run_blocking, callback
+                    )
 
     def unsubscribe(
         self,
@@ -881,7 +925,7 @@ class ProductUpdateEventPublisher:
         Args:
             handler (Handler): The handler to be unsubscribed from the
                 event(s). if None, all handlers for the event are unsubscribed.
-            event (Union[ProductUpdateEvent, Iterable[ProductUpdateEvent],\
+            event (Union[ProductUpdateEvent, Iterable[ProductUpdateEvent],
             None], optional): The type of product update event(s)
                 to unsubscribe from. If None, the handler(s) will be subscribed
                 from all events.
@@ -911,7 +955,7 @@ class ProductUpdateEventPublisher:
         Args:
             handler (Optional[Handler], optional): The handler to check for
                 subscription. If None, all handlers are checked.
-            event (Union[ProductUpdateEvent, Iterable[ProductUpdateEvent],\
+            event (Union[ProductUpdateEvent, Iterable[ProductUpdateEvent],
             None], optional): The type of product update event(s) to check for
                 subscribers. If None, all events are checked.
 
@@ -951,7 +995,7 @@ class ProductUpdateEventPublisher:
             **kwargs (Any): Additional context parameters to be included.
 
         Returns:
-            ProductUpdateContext: A context object populated with the global\
+            ProductUpdateContext: A context object populated with the global
                 context data and the provided product information and
                 parameters.
         """
@@ -996,7 +1040,7 @@ class ProductUpdateEventPublisher:
                 self.runner.run_async(
                     async_sub.handler,
                     context,
-                    run_safe=async_sub.exec_params.call_safe,
+                    run_safe=async_sub.exec_params.run_safe,
                     done_callback=async_sub.exec_params.done_callback
                     )
         if event in self.sync_subscribers:
@@ -1008,7 +1052,8 @@ class ProductUpdateEventPublisher:
                 self.runner.run_sync(
                     sync_sub.handler,
                     context,
-                    run_safe=sync_sub.exec_params.call_safe,
+                    run_safe=sync_sub.exec_params.run_safe,
+                    run_blocking=sync_sub.exec_params.run_blocking,
                     done_callback=sync_sub.exec_params.done_callback
                     )
 

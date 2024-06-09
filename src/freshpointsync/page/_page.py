@@ -51,9 +51,7 @@ class ProductPageData(BaseModel):
     """ID of the product location."""
     html_hash: str = Field(default='')
     """SHA-256 hash of the HTML contents of the product page."""
-    products: dict[int, Product] = Field(
-        default_factory=dict, repr=False, frozen=True
-        )
+    products: dict[int, Product] = Field(default={}, repr=False, frozen=True)
     """Dictionary of products' data on the page."""
 
     @cached_property
@@ -1051,7 +1049,9 @@ class ProductPageHub:
         for page_id, page_fetch_info in pages_fetch_info.items():
             contents = page_fetch_info.contents or ''
             func = self._pages[page_id]._parse_contents_blocking
-            task = self._runner.run_sync(func, contents, run_safe=run_safe)
+            task = self._runner.run_sync(
+                func, contents, run_safe=run_safe, run_blocking=False
+                )
             tasks.append(task)
         results: list[list[Product]] = [
             result if isinstance(result, list) else []

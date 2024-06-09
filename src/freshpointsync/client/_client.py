@@ -30,6 +30,7 @@ class ProductDataFetchClient:
         self._timeout = self._check_client_timeout(timeout)
         self._max_retries = self._check_max_retries(max_retries)
         self._client_session: Optional[aiohttp.ClientSession] = None
+        self._ssl_context: Optional[ssl.SSLContext] = None
 
     async def __aenter__(self):
         """Asynchronous context manager entry."""
@@ -178,6 +179,10 @@ class ProductDataFetchClient:
             logger.debug(
                 'Client session for "%s" is already started.', self.BASE_URL
                 )
+        if self._ssl_context is None:
+            logger.debug('Creating SSL context for "%s".', self.BASE_URL)
+            context = ssl.create_default_context(cafile=certifi.where())
+            self._ssl_context = context
 
     async def close_session(self) -> None:
         """Close the aiohttp client session if one is open."""
@@ -191,6 +196,9 @@ class ProductDataFetchClient:
             logger.debug(
                 'Successfully closed client session for "%s".', self.BASE_URL
                 )
+        if self._ssl_context is not None:
+            logger.debug('Clearing SSL context for "%s".', self.BASE_URL)
+            self._ssl_context = None
 
     def _check_fetch_args(
         self, location_id: Any, timeout: Any, max_retries: Any
@@ -291,9 +299,9 @@ class ProductDataFetchClient:
             Optional[str]: The fetched data as a string,\
                 or None if the fetch failed.
         """
+        assert self._ssl_context is not None
         args = self._check_fetch_args(location_id, timeout, max_retries)
         session, relative_url, timeout, max_retries = args
-        ssl_context = ssl.create_default_context(cafile=certifi.where())
         attempt = 0
         while attempt < max_retries:
             logger.info(
@@ -301,7 +309,7 @@ class ProductDataFetchClient:
                 self.BASE_URL, relative_url, attempt + 1, max_retries
                 )
             text = await self._fetch_once(
-                session, ssl_context, relative_url, timeout
+                session, self._ssl_context, relative_url, timeout
                 )
             if text is not None:
                 return text

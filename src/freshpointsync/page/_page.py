@@ -968,17 +968,20 @@ class ProductPageHub:
         return page
 
     async def scan(
-        self, start: int = 0, stop: int = 500, step: int = 1
+        self, start: int = 1, stop: int = 999, step: int = 1
     ) -> None:
         """Scan for new product pages in a range of location IDs. The pages
         that are valid and have products are registered in the hub.
 
+        Note: unlike Python's `range` function, the `stop` parameter is
+        inclusive.
+
         Args:
-            start (int, optional): Start location ID. Defaults to 0.
-            stop (int, optional): Stop location ID. Defaults to 500.
+            start (int, optional): Start location ID. Defaults to 1.
+            stop (int, optional): Stop location ID. Defaults to 999.
             step (int, optional): Step size for location IDs. Defaults to 1.
         """
-        for loc in range(start, stop, step):
+        for loc in range(start, stop + 1, step):
             if loc in self._pages:
                 continue
             await self.new_page(

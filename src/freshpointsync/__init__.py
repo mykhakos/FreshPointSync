@@ -1,22 +1,26 @@
+from . import client, page, parser, product, update
+from ._logging import logger
 from .page import (
-    ProductPage, ProductPageData, ProductPageHub, ProductPageHubData
+    ProductPage,
+    ProductPageData,
+    ProductPageHub,
+    ProductPageHubData,
 )
 from .product import Product
 from .update import ProductUpdateEvent, is_valid_handler
-from . import client, page, parser, product, update
-
 
 __all__ = [
+    'Product',
     'ProductPage',
     'ProductPageData',
     'ProductPageHub',
     'ProductPageHubData',
-    'Product',
     'ProductUpdateEvent',
-    'is_valid_handler',
     'client',
+    'is_valid_handler',
+    'logger',
     'page',
     'parser',
     'product',
     'update',
-    ]
+]

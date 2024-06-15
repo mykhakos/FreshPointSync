@@ -1,30 +1,36 @@
-from __future__ import annotations
-
 import asyncio
 import logging
-
 from concurrent.futures import ProcessPoolExecutor
 from functools import cached_property
+from typing import (
+    Any,
+    Callable,
+    Iterable,
+    NamedTuple,
+    Optional,
+    Type,
+    TypeVar,
+    Union,
+)
+
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
-from typing import Any, Callable, Iterable, Optional, NamedTuple, Union
 
 from ..client._client import ProductDataFetchClient
 from ..parser._parser import (
-    ProductPageHTMLParser,
     ProductFinder,
+    ProductPageHTMLParser,
     hash_text,
-    normalize_text
+    normalize_text,
 )
 from ..product._product import Product
 from ..update._update import (
     CallableRunner,
+    Handler,
+    ProductCacheUpdater,
     ProductUpdateEvent,
     ProductUpdateEventPublisher,
-    ProductCacheUpdater,
-    Handler
 )
-
 
 logger = logging.getLogger('freshpointsync.page')
 """Logger for the `freshpointsync.page` module."""
@@ -32,6 +38,7 @@ logger = logging.getLogger('freshpointsync.page')
 
 class FetchInfo(NamedTuple):
     """Named tuple for a product page fetch information."""
+
     contents: Optional[str]
     """The fetched contents of the product page."""
     contents_hash: Optional[str]
@@ -42,10 +49,11 @@ class FetchInfo(NamedTuple):
 
 class ProductPageData(BaseModel):
     """Data model of a product page."""
+
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
-        )
+    )
 
     location_id: int = Field(frozen=True)
     """ID of the product location."""
@@ -61,7 +69,7 @@ class ProductPageData(BaseModel):
 
     @property  # not cached because products may be missing upon initialization
     def location(self) -> str:
-        """Name of the product location. Infers from the first product in 
+        """Name of the product location. Infers from the first product in
         the products dictionary. If the dictionary is empty, returns an empty
         string.
         """
@@ -89,16 +97,20 @@ class ProductPageData(BaseModel):
         return categories
 
 
+TProductPage = TypeVar('TProductPage', bound='ProductPage')
+
+
 class ProductPage:
     """Product page object that provides methods for fetching, updating, and
     managing product data on the page. May be used as an asynchronous context
     manager.
     """
+
     def __init__(
         self,
         location_id: Optional[int] = None,
         data: Optional[ProductPageData] = None,
-        client: Optional[ProductDataFetchClient] = None
+        client: Optional[ProductDataFetchClient] = None,
     ) -> None:
         """Initializes a new product page object.
 
@@ -118,7 +130,7 @@ class ProductPage:
         self._update_forever_task: Optional[asyncio.Task] = None
         self._updater = ProductCacheUpdater(
             self._data.products, self._publisher
-            )
+        )
 
     def __str__(self) -> str:
         """String representation of the product page object."""
@@ -129,12 +141,17 @@ class ProductPage:
         cls_name = self.__class__.__name__
         return f'{cls_name}(location_id={self._data.location_id})'
 
-    async def __aenter__(self):
+    async def __aenter__(self: TProductPage) -> TProductPage:
         """Asynchronous context manager entry."""
         await self.start_session()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_value: Optional[BaseException],
+        traceback: Optional[object],
+    ) -> None:
         """Asynchronous context manager exit."""
         await self.close_session()
         await self.cancel_update_handlers()
@@ -143,7 +160,7 @@ class ProductPage:
     @staticmethod
     def _validate_data(
         location_id: Optional[int] = None,
-        data: Optional[ProductPageData] = None
+        data: Optional[ProductPageData] = None,
     ) -> ProductPageData:
         """Validates the product page data and location ID.
 
@@ -202,10 +219,12 @@ class ProductPage:
         handler: Handler,
         event: Union[
             ProductUpdateEvent, Iterable[ProductUpdateEvent], None
-            ] = None,
+        ] = None,
         call_safe: bool = True,
         call_blocking: bool = True,
-        handler_done_callback: Optional[Callable[[asyncio.Future], Any]] = None
+        handler_done_callback: Optional[
+            Callable[[asyncio.Future], Any]
+        ] = None,
     ) -> None:
         """Subscribe a handler to specific product update event(s). The handler
         will be invoked when the event is posted, with the event context
@@ -218,10 +237,9 @@ class ProductPage:
         Args:
             handler (Handler): The function or callable to invoke for
                 the event(s).
-            event (Union[ProductUpdateEvent, Iterable[ProductUpdateEvent],\
-            None], optional): The type of product update event(s) to
-                subscribe to. If None, the handler will be subscribed to
-                all events.
+            event (Union[ProductUpdateEvent, Iterable[ProductUpdateEvent], None], optional):
+                The type of product update event(s) to subscribe to. If None,
+                the handler will be subscribed to all events.
             call_safe (bool, optional): If True, exceptions raised by
                 the handler are caught and logged. If False, exceptions are
                 propagated and must be handled by the caller. Defaults to True.
@@ -243,14 +261,14 @@ class ProductPage:
         """
         self._publisher.subscribe(
             handler, event, call_safe, call_blocking, handler_done_callback
-            )
+        )
 
     def unsubscribe_from_update(
         self,
         handler: Optional[Handler] = None,
         event: Union[
             ProductUpdateEvent, Iterable[ProductUpdateEvent], None
-            ] = None
+        ] = None,
     ) -> None:
         """Unsubscribe a handler from specific product update event(s),
         or all handlers if no specific handler is provided. The unsubscribed
@@ -259,10 +277,9 @@ class ProductPage:
         Args:
             handler (Handler): The handler to be unsubscribed from the
                 event(s). if None, all handlers for the event are unsubscribed.
-            event (Union[ProductUpdateEvent, Iterable[ProductUpdateEvent],\
-            None], optional): The type of product update event(s)
-                to unsubscribe from. If None, the handler(s) will be subscribed
-                from all events.
+            event (Union[ProductUpdateEvent, Iterable[ProductUpdateEvent], None], optional):
+                The type of product update event(s) to subscribe to. If None,
+                the handler will be subscribed to all events.
         """
         self._publisher.unsubscribe(handler, event)
 
@@ -271,16 +288,16 @@ class ProductPage:
         handler: Optional[Handler] = None,
         event: Union[
             ProductUpdateEvent, Iterable[ProductUpdateEvent], None
-            ] = None
+        ] = None,
     ) -> bool:
         """Check if there are any subscribers for the given event(s).
 
         Args:
             handler (Optional[Handler], optional): The handler to check for
                 subscription. If None, all handlers are checked.
-            event (Union[ProductUpdateEvent, Iterable[ProductUpdateEvent],\
-            None], optional): The type of product update event(s) to check for
-                subscribers. If None, all events are checked.
+            event (Union[ProductUpdateEvent, Iterable[ProductUpdateEvent], None], optional):
+                The type of product update event(s) to subscribe to. If None,
+                the handler will be subscribed to all events.
 
         Returns:
             bool: True if there are subscribers for the event, False otherwise.
@@ -309,7 +326,7 @@ class ProductPage:
         try:
             contents = await self._runner.run_async(
                 self._client.fetch, self._data.location_id
-                )
+            )
         except asyncio.CancelledError:
             return FetchInfo(None, None, is_updated)
         if contents is None:
@@ -399,7 +416,7 @@ class ProductPage:
         html_hash: str,
         products: Iterable[Product],
         await_handlers: bool = False,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> None:
         """Fetch the contents of the product page, extract the product data,
         update the internal state of the page, and trigger event handlers.
@@ -409,6 +426,8 @@ class ProductPage:
             products (Iterable[Product]): Iterable of product data to update.
             await_handlers (bool, optional): If True, the method will wait for
                 all event handlers to complete execution. Defaults to False.
+            **kwargs (Any): Additional keyword arguments to pass to the event
+                handlers.
         """
         self.data.html_hash = html_hash
         await self._updater.update(products, await_handlers, **kwargs)
@@ -422,6 +441,8 @@ class ProductPage:
         Args:
             await_handlers (bool, optional): If True, the method will wait for
                 all event handlers to complete execution. Defaults to False.
+            **kwargs (Any): Additional keyword arguments to pass to the event
+                handlers.
         """
         fetch_info = await self._fetch_contents()
         if fetch_info.is_updated:
@@ -430,13 +451,13 @@ class ProductPage:
             products = await self._parse_contents(fetch_info.contents)
             await self._update(
                 fetch_info.contents_hash, products, await_handlers, **kwargs
-                )
+            )
 
     async def update_forever(
         self,
         interval: float = 10.0,
         await_handlers: bool = False,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> None:
         """Update the product page at regular intervals.
 
@@ -448,6 +469,8 @@ class ProductPage:
                 updates. Defaults to 10.0.
             await_handlers (bool, optional): If True, the method will wait for
                 all event handlers to complete execution. Defaults to False.
+            **kwargs (Any): Additional keyword arguments to pass to the event
+                handlers.
         """
         while True:
             try:
@@ -460,7 +483,7 @@ class ProductPage:
         self,
         interval: float = 10.0,
         await_handlers: bool = False,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> asyncio.Task:
         """Initialize the update forever task. If the task is already running,
         the method does nothing.
@@ -475,6 +498,8 @@ class ProductPage:
                 updates. Defaults to 10.0.
             await_handlers (bool, optional): If True, the method will wait for
                 all event handlers to complete execution. Defaults to False.
+            **kwargs (Any): Additional keyword arguments to pass to the event
+                handlers.
 
         Returns:
             asyncio.Task: The task object created by `asyncio.create_task`.
@@ -483,7 +508,7 @@ class ProductPage:
         if task is None or task.done():
             task = asyncio.create_task(
                 self.update_forever(interval, await_handlers, **kwargs)
-                )
+            )
             self._update_forever_task = task
         return task
 
@@ -510,13 +535,14 @@ class ProductPage:
     def _find_product_by_id(
         self,
         constraint: Optional[Callable[[Product], bool]] = None,
-        **attributes
+        **attributes: Any,
     ) -> Optional[Product]:
         """Find a product by ID.
 
         Args:
             constraint (Optional[Callable[[Product], bool]], optional): Optional
                 constraint function to filter products. Defaults to None.
+            **attributes (Any): Product attributes to match.
 
         Returns:
             Optional[Product]: The product object if found, None otherwise.
@@ -532,7 +558,7 @@ class ProductPage:
     def find_product(
         self,
         constraint: Optional[Callable[[Product], bool]] = None,
-        **attributes
+        **attributes: Any,
     ) -> Optional[Product]:
         """Find a product on the page that matches the specified attributes.
 
@@ -546,6 +572,7 @@ class ProductPage:
                 function that takes a `Product` instance as input and returns
                 a boolean indicating whether a certain constraint is met for
                 this instance.
+            **attributes (Any): Product attributes to match.
 
         Returns:
             Optional[Product]: The product object if found, None otherwise.
@@ -554,12 +581,12 @@ class ProductPage:
             return self._find_product_by_id(constraint, **attributes)
         return ProductFinder.find_product(
             self.data.products.values(), constraint, **attributes
-            )
+        )
 
     def find_products(
         self,
         constraint: Optional[Callable[[Product], bool]] = None,
-        **attributes
+        **attributes: Any,
     ) -> list[Product]:
         """Find products on the page that match the specified attributes.
 
@@ -573,6 +600,7 @@ class ProductPage:
                 function that takes a `Product` instance as input and returns
                 a boolean indicating whether a certain constraint is met for
                 this instance.
+            **attributes (Any): Product attributes to match.
 
         Returns:
             list[Product]: List of product objects that match the specified
@@ -585,20 +613,24 @@ class ProductPage:
             return [product]
         return ProductFinder.find_products(
             self.data.products.values(), constraint, **attributes
-            )
+        )
 
 
 class ProductPageHubData(BaseModel):
     """Data model of a product page hub."""
+
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
-        )
+    )
 
     pages: dict[int, ProductPageData] = Field(
-        default_factory=dict, repr=False, frozen=True
-        )
+        default={}, repr=False, frozen=True
+    )
     """Dictionary of product page data models."""
+
+
+TProductPageHub = TypeVar('TProductPageHub', bound='ProductPageHub')
 
 
 class ProductPageHub:
@@ -607,11 +639,12 @@ class ProductPageHub:
     individually. Page data updates are done in parallel using asyncio tasks to
     optimize performance. May be used as an asynchronous context manager.
     """
+
     def __init__(
         self,
         data: Optional[ProductPageHubData] = None,
         client: Optional[ProductDataFetchClient] = None,
-        enable_multiprocessing: bool = False
+        enable_multiprocessing: bool = False,
     ) -> None:
         """Initializes a new product page hub object.
 
@@ -632,23 +665,28 @@ class ProductPageHub:
         self._pages: dict[int, ProductPage] = {
             page_id: ProductPage(data=page_data, client=self._client)
             for page_id, page_data in self._data.pages.items()
-            }
+        }
         self._publisher = ProductUpdateEventPublisher()
         executor = ProcessPoolExecutor() if enable_multiprocessing else None
         self._runner = CallableRunner(executor=executor)
         self._update_forever_task: Optional[asyncio.Task] = None
-    
+
     def __str__(self) -> str:
         """String representation of the product page hub object."""
-        page_ids = ", ".join(str(pid) for pid in self._pages.keys())
+        page_ids = ', '.join(str(pid) for pid in self._pages.keys())
         return f'ProductPageHub for pages: {page_ids}'
 
-    async def __aenter__(self):
+    async def __aenter__(self: TProductPageHub) -> TProductPageHub:
         """Asynchronous context manager entry."""
         await self.start_session()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_value: Optional[BaseException],
+        traceback: Optional[object],
+    ) -> None:
         """Asynchronous context manager exit."""
         await self.close_session()
         await self.await_update_handlers()
@@ -683,10 +721,12 @@ class ProductPageHub:
         handler: Handler,
         event: Union[
             ProductUpdateEvent, Iterable[ProductUpdateEvent], None
-            ] = None,
+        ] = None,
         call_safe: bool = True,
         call_blocking: bool = True,
-        handler_done_callback: Optional[Callable[[asyncio.Future], Any]] = None
+        handler_done_callback: Optional[
+            Callable[[asyncio.Future], Any]
+        ] = None,
     ) -> None:
         """Subscribe a handler to specific product update event(s) for all
         pages in the hub. The handler will be invoked when the event is posted,
@@ -699,10 +739,9 @@ class ProductPageHub:
         Args:
             handler (Handler): The function or callable to invoke for
                 the event(s).
-            event (Union[ProductUpdateEvent, Iterable[ProductUpdateEvent],\
-            None], optional): The type of product update event(s) to
-                subscribe to. If None, the handler will be subscribed to
-                all events.
+            event (Union[ProductUpdateEvent, Iterable[ProductUpdateEvent], None], optional):
+                The type of product update event(s) to subscribe to. If None,
+                the handler will be subscribed to all events.
             call_safe (bool, optional): If True, exceptions raised by
                 the handler are caught and logged. If False, exceptions are
                 propagated and must be handled by the caller. Defaults to True.
@@ -724,18 +763,18 @@ class ProductPageHub:
         """
         self._publisher.subscribe(
             handler, event, call_safe, call_blocking, handler_done_callback
-            )  # will not be directly invoked upon page updates
+        )  # will not be directly invoked upon page updates
         for page in self._pages.values():
             page.subscribe_for_update(
                 handler, event, call_safe, call_blocking, handler_done_callback
-                )
+            )
 
     def unsubscribe_from_update(
         self,
         handler: Optional[Handler] = None,
         event: Union[
             ProductUpdateEvent, Iterable[ProductUpdateEvent], None
-            ] = None
+        ] = None,
     ) -> None:
         """Unsubscribe a handler from specific product update event(s) for all
         pages in the hub, or all handlers if no specific handler is provided.
@@ -745,10 +784,9 @@ class ProductPageHub:
         Args:
             handler (Handler): The handler to be unsubscribed from the
                 event(s). if None, all handlers for the event are unsubscribed.
-            event (Union[ProductUpdateEvent, Iterable[ProductUpdateEvent],\
-            None], optional): The type of product update event(s)
-                to unsubscribe from. If None, the handler(s) will be subscribed
-                from all events.
+            event (Union[ProductUpdateEvent, Iterable[ProductUpdateEvent], None], optional):
+                The type of product update event(s) to subscribe to. If None,
+                the handler will be subscribed to all events.
         """
         self._publisher.unsubscribe(handler, event)
         for page in self._pages.values():
@@ -759,7 +797,7 @@ class ProductPageHub:
         handler: Optional[Handler] = None,
         event: Union[
             ProductUpdateEvent, Iterable[ProductUpdateEvent], None
-            ] = None
+        ] = None,
     ) -> bool:
         """Check if there are any subscribers for the given event(s) for any
         page in the hub.
@@ -767,9 +805,9 @@ class ProductPageHub:
         Args:
             handler (Optional[Handler], optional): The handler to check for
                 subscription. If None, all handlers are checked.
-            event (Union[ProductUpdateEvent, Iterable[ProductUpdateEvent],\
-            None], optional): The type of product update event(s) to check for
-                subscribers. If None, all events are checked.
+            event (Union[ProductUpdateEvent, Iterable[ProductUpdateEvent], None], optional):
+                The type of product update event(s) to subscribe to. If None,
+                the handler will be subscribed to all events.
 
         Returns:
             bool: True if there are subscribers for the event, False otherwise.
@@ -781,7 +819,7 @@ class ProductPageHub:
                 return True
         return False
 
-    def set_context(self, key: Any, value: Any) -> None:
+    def set_context(self, key: object, value: object) -> None:
         """Set a context key-value pair for all pages in the hub.
 
         Args:
@@ -792,7 +830,7 @@ class ProductPageHub:
         for page in self._pages.values():
             page.context[key] = value
 
-    def del_context(self, key: Any) -> None:
+    def del_context(self, key: object) -> None:
         """Delete a context key-value pair for all pages in the hub. If the key
         does not exist in the page context, the method does nothing.
 
@@ -820,7 +858,7 @@ class ProductPageHub:
         self,
         page: ProductPage,
         update_contents: bool,
-        trigger_handlers: bool = False
+        trigger_handlers: bool = False,
     ) -> None:
         """Register a new product page in the hub.
 
@@ -842,10 +880,10 @@ class ProductPageHub:
                     page.subscribe_for_update(
                         handler_data.handler,
                         event,
-                        handler_data.exec_params.run_safe, 
+                        handler_data.exec_params.run_safe,
                         handler_data.exec_params.run_blocking,
-                        handler_data.exec_params.done_callback
-                        )
+                        handler_data.exec_params.done_callback,
+                    )
         # add common context
         for key, value in self._publisher.context:
             page.context[key] = value
@@ -865,11 +903,16 @@ class ProductPageHub:
         self._data.pages.pop(location_id)
         self._pages.pop(location_id)
 
+    @property
+    def pages(self) -> dict[int, ProductPage]:
+        """Dictionary of product page objects with location IDs as keys."""
+        return self._pages.copy()
+
     async def new_page(
         self,
         location_id: int,
         fetch_contents: bool = False,
-        trigger_handlers: bool = False
+        trigger_handlers: bool = False,
     ) -> ProductPage:
         """Create a new product page and register it in the hub.
 
@@ -892,7 +935,7 @@ class ProductPageHub:
         self,
         page: ProductPage,
         update_contents: bool = False,
-        trigger_handlers: bool = False
+        trigger_handlers: bool = False,
     ) -> None:
         """Add an existing product page to the hub. The page retains its own
         state, but receives a common client. Its contents and event handlers
@@ -909,36 +952,8 @@ class ProductPageHub:
             await page.set_client(self._client)
         await self._register_page(page, update_contents, trigger_handlers)
 
-    def get_page(self, location_id: int) -> ProductPage:
-        """Get a registered product page by location ID.
-
-        Args:
-            location_id (int): ID of the product location.
-
-        Raises:
-            KeyError: If the page is not found.
-
-        Returns:
-            ProductPage: The product page object.
-        """
-        try:
-            return self._pages[location_id]
-        except KeyError:
-            raise KeyError(f'Page not found: {location_id}')
-
-    def get_pages(self) -> dict[int, ProductPage]:
-        """Get all registered product pages.
-
-        Returns:
-            dict[int, ProductPage]: Dictionary of product page objects with
-                location IDs as keys.
-        """
-        return self._pages.copy()
-
     async def remove_page(
-        self,
-        location_id: int,
-        await_handlers: bool = False
+        self, location_id: int, await_handlers: bool = False
     ) -> ProductPage:
         """Remove a product page from the hub.
 
@@ -951,14 +966,16 @@ class ProductPageHub:
             await_handlers (bool, optional): If True, the method will wait for
                 all event handlers bound to the page to complete execution.
                 Defaults to False.
-        
+
         Raises:
             KeyError: If the page is not found.
 
         Returns:
             ProductPage: The removed product page object.
         """
-        page = self.get_page(location_id)
+        if location_id not in self._pages:
+            raise KeyError(f'Page with location ID {location_id} not found')
+        page = self._pages[location_id]
         self._unregister_page(location_id)
         if await_handlers:
             await page.await_update_handlers()
@@ -985,14 +1002,12 @@ class ProductPageHub:
             if loc in self._pages:
                 continue
             await self.new_page(
-                location_id=loc,
-                fetch_contents=False,
-                trigger_handlers=False
-                )
+                location_id=loc, fetch_contents=False, trigger_handlers=False
+            )
         await self.update_silently()
         inexistent_locations = [
             loc for loc, page in self._pages.items() if not page.data.products
-            ]
+        ]
         for loc in inexistent_locations:
             self._unregister_page(loc)
 
@@ -1009,8 +1024,9 @@ class ProductPageHub:
         results: list[FetchInfo] = await asyncio.gather(*tasks)
         return dict(zip(self._pages.keys(), results))
 
+    @staticmethod
     def _filter_updated_contents(
-        self, pages_fetch_info: dict[int, FetchInfo]
+        pages_fetch_info: dict[int, FetchInfo],
     ) -> dict[int, FetchInfo]:
         """Filter the fetched contents to only include pages the contents of
         which have been updated.
@@ -1027,7 +1043,7 @@ class ProductPageHub:
             page_id: page_fetch_info
             for page_id, page_fetch_info in pages_fetch_info.items()
             if page_fetch_info.is_updated
-            }
+        }
 
     async def _parse_contents(
         self, pages_fetch_info: dict[int, FetchInfo]
@@ -1054,12 +1070,12 @@ class ProductPageHub:
             func = self._pages[page_id]._parse_contents_blocking
             task = self._runner.run_sync(
                 func, contents, run_safe=run_safe, run_blocking=False
-                )
+            )
             tasks.append(task)
         results: list[list[Product]] = [
             result if isinstance(result, list) else []
             for result in await asyncio.gather(*tasks, return_exceptions=True)
-            ]
+        ]
         return dict(zip(pages_fetch_info.keys(), results))
 
     async def update_silently(self) -> None:
@@ -1077,9 +1093,7 @@ class ProductPageHub:
             page._update_silently(page_html_hash, page_products)
 
     async def update(
-        self,
-        await_handlers: bool = False,
-        **kwargs
+        self, await_handlers: bool = False, **kwargs: Any
     ) -> None:
         """Fetch the contents of all product pages in the hub, extract the
         product data, update the internal state of the pages, and trigger
@@ -1088,6 +1102,8 @@ class ProductPageHub:
         Args:
             await_handlers (bool, optional): If True, the method will wait for
                 all event handlers to complete execution. Defaults to False.
+            **kwargs (Any): Additional keyword arguments to pass to the event
+                handlers.
         """
         pages_fetch_info = await self._fetch_contents()
         pages_fetch_info = self._filter_updated_contents(pages_fetch_info)
@@ -1102,8 +1118,8 @@ class ProductPageHub:
                 page_html_hash,
                 page_products,
                 await_handlers,
-                **kwargs
-                )
+                **kwargs,
+            )
             tasks.append(task)
         await asyncio.gather(*tasks)
 
@@ -1111,7 +1127,7 @@ class ProductPageHub:
         self,
         interval: float = 10.0,
         await_handlers: bool = False,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> None:
         """Update all product pages in the hub at regular intervals.
 
@@ -1123,6 +1139,8 @@ class ProductPageHub:
                 updates. Defaults to 10.0.
             await_handlers (bool, optional): If True, the method will wait for
                 all event handlers to complete execution. Defaults to False.
+            **kwargs (Any): Additional keyword arguments to pass to the event
+                handlers.
         """
         while True:
             try:
@@ -1135,7 +1153,7 @@ class ProductPageHub:
         self,
         interval: float = 10.0,
         await_handlers: bool = False,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> asyncio.Task:
         """Initialize the update forever task for all product pages in the hub.
         If a task is already running, the method does nothing.
@@ -1151,12 +1169,14 @@ class ProductPageHub:
                 updates. Defaults to 10.0.
             await_handlers (bool, optional): If True, the method will wait for
                 all event handlers to complete execution. Defaults to False.
+            **kwargs (Any): Additional keyword arguments to pass to the event
+                handlers.
         """
         task = self._update_forever_task
         if task is None or task.done():
             task = asyncio.create_task(
                 self.update_forever(interval, await_handlers, **kwargs)
-                )
+            )
             self._update_forever_task = task
         return task
 

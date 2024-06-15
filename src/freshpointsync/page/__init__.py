@@ -3,14 +3,13 @@ from ._page import (
     ProductPage,
     ProductPageData,
     ProductPageHub,
-    ProductPageHubData
+    ProductPageHubData,
 )
-
 
 __all__ = [
     'FetchInfo',
     'ProductPage',
     'ProductPageData',
     'ProductPageHub',
-    'ProductPageHubData'
+    'ProductPageHubData',
 ]

@@ -1,33 +1,32 @@
-import bs4
 import hashlib
 import html
 import logging
 import re
 import typing
-
 from functools import cached_property
+
+import bs4
 from unidecode import unidecode
 
 from ..product._product import Product
 
-
-logger = logging.getLogger("freshpointsync.parser")
+logger = logging.getLogger('freshpointsync.parser')
 """Logger for the `freshpointsync.parser` module."""
 
 
-def normalize_text(text: typing.Any) -> str:
+def normalize_text(text: object) -> str:
     """Normalize the given text by removing diacritics, leading/trailing
     whitespace, and converting it to lowercase. Non-string values are
     converted to strings. `None` values are converted to empty strings.
 
     Args:
-        text (typing.Any): The text to be normalized.
+        text (Any): The text to be normalized.
 
     Returns:
         str: The normalized text.
     """
     if text is None:
-        return ""
+        return ''
     return unidecode(str(text).strip()).casefold()
 
 
@@ -71,19 +70,17 @@ class ProductHTMLParser:
             TypeError: If the extracted element is not a `bs4.Tag` object.
         """
         if len(resultset) == 0:
-            raise ValueError(
-                'ResultSet is empty (expected one Tag element).'
-                )
+            raise ValueError('ResultSet is empty (expected one Tag element).')
         if len(resultset) != 1:
             raise ValueError(
                 f'Unexpected number of elements in the ResultSet'
                 f'(expected 1, got {len(resultset)}).'
-                )
+            )
         if not isinstance(resultset[0], bs4.Tag):
             raise TypeError(
                 f'The element in the ResultSet is not a Tag object. '
                 f'(got type "{type(resultset[0]).__name__}").'
-                )
+            )
         return resultset[0]
 
     @staticmethod
@@ -112,7 +109,7 @@ class ProductHTMLParser:
                 f'Unexpected "{attr_name}" attribute parsing results: '
                 f'attribute value is expected to be a string '
                 f'(got type "{type(attr).__name__}").'
-                )
+            )
         return attr.strip()
 
     @classmethod
@@ -146,6 +143,18 @@ class ProductHTMLParser:
         """
         return cls._get_attr_value('data-photourl', product_data)
 
+    @staticmethod
+    def has_text_chars(text: str) -> bool:
+        """Check if the given text contains any characters.
+
+        Args:
+            text (str): The text to check.
+
+        Returns:
+            bool: True if the text is empty, False otherwise.
+        """
+        return bool(text)
+
     @classmethod
     def find_category(cls, product_data: bs4.Tag) -> str:
         """Extract the product category from the given product data."""
@@ -154,11 +163,9 @@ class ProductHTMLParser:
                 f'Unable to extract product category name for product '
                 f'"id={cls._find_id_safe(product_data)}" from the provided '
                 f'html data (parent data is missing).'
-                )
-        category = product_data.parent.find_all(
-            name='h2',
-            string=lambda text: bool(text)
             )
+        # 'string=bool' filters out empty strings and None values
+        category = product_data.parent.find_all(name='h2', string=bool)
         try:
             return cls._extract_single_tag(category).text.strip()
         except Exception as exp:
@@ -166,7 +173,7 @@ class ProductHTMLParser:
                 f'Unable to extract product category name for product '
                 f'"id={cls._find_id_safe(product_data)}" from the provided '
                 f'html data ({exp}).'
-                ) from exp
+            ) from exp
 
     @classmethod
     def _find_id_safe(cls, product_data: bs4.Tag) -> str:
@@ -179,7 +186,7 @@ class ProductHTMLParser:
             logger.warning(
                 f'Unable to extract product ID from the provided html data '
                 f'({e}).'
-                )
+            )
             return '?'
 
     @classmethod
@@ -206,7 +213,7 @@ class ProductHTMLParser:
             raise ValueError(
                 f'Unable to convert a parsed value for the product '
                 f'"id={cls._find_id_safe(product_data)}".'
-                ) from exc
+            ) from exc
 
     @classmethod
     def find_quantity(cls, product_data: bs4.Tag) -> int:
@@ -217,23 +224,23 @@ class ProductHTMLParser:
             name='span',
             string=(
                 lambda text: bool(
-                    text and
-                    re.match(
-                        pattern=r"^((posledni)|(\d+))\s(kus|kusy|kusu)!?$",
-                        string=normalize_text(text)
-                        )
+                    text
+                    and re.match(
+                        pattern=r'^((posledni)|(\d+))\s(kus|kusy|kusu)!?$',
+                        string=normalize_text(text),
                     )
                 )
-            )
+            ),
+        )
         if not result:  # sold out products don't have the quantity text
-            return 0    # (should be caught by the "sold-out" check above)
+            return 0  # (should be caught by the "sold-out" check above)
         quantity = normalize_text(cls._extract_single_tag(result).text)
         if 'posledn' in quantity:  # products that have only 1 item in stock
-            return 1               # have "posledni" in the quantity text
+            return 1  # have "posledni" in the quantity text
         return cls._run_converter(
             lambda: int(quantity.split()[0]),  # regular ("2 kusy", "5 kusu")
-            product_data
-            )
+            product_data,
+        )
 
     @classmethod
     def find_price(cls, product_data: bs4.Tag) -> tuple[float, float]:
@@ -244,33 +251,35 @@ class ProductHTMLParser:
             name='span',
             string=(
                 lambda text: bool(
-                    text and
-                    re.match(
-                        pattern=r"^\d+\.\d+$",
-                        string=normalize_text(text)
-                        )
+                    text
+                    and re.match(
+                        pattern=r'^\d+\.\d+$', string=normalize_text(text)
                     )
                 )
-            )
+            ),
+        )
         if len(result) == 1:
             price_full = cls._run_converter(
-                lambda: float(result[0].text), product_data  # price_full_str
-                )
+                lambda: float(result[0].text),
+                product_data,  # price_full_str
+            )
             return price_full, price_full
         elif len(result) == 2:
             price_full = cls._run_converter(
-                lambda: float(result[0].text), product_data  # price_full_str
-                )
+                lambda: float(result[0].text),
+                product_data,  # price_full_str
+            )
             price_curr = cls._run_converter(
-                lambda: float(result[1].text), product_data  # price_curr_str
-                )
+                lambda: float(result[1].text),
+                product_data,  # price_curr_str
+            )
             if price_curr > price_full:
                 id_ = cls._find_id_safe(product_data)
                 raise ValueError(
                     f'Unexpected product "id={id_}" parsing results: '
                     f'current price "{price_curr}" is greater than '
                     f'the regular full price "{price_full}".'
-                    )
+                )
             # elif price_curr < price_full:  # "data-isPromo" is unreliable
             #     id_ = cls._find_id_safe(product_data)
             #     if cls._get_attr_value('data-ispromo', product_data) != '1':
@@ -284,17 +293,17 @@ class ProductHTMLParser:
         raise ValueError(
             f'Unexpected number of elements in the ResultSet'
             f'(expected 1 or 2, got {len(result)}).'
-            )
+        )
 
 
 class ProductPageHTMLParser:
-    """
-    A parser for processing HTML contents of a FreshPoint.cz web page.
+    """A parser for processing HTML contents of a FreshPoint.cz web page.
 
     This class uses BeautifulSoup to parse HTML contents and extract data
     related to the products listed on the page. The parser can search for
     products by either name, ID, or both.
     """
+
     def __init__(self, page_html: str) -> None:
         """Initialize the parser with HTML contents of a product page.
 
@@ -311,7 +320,7 @@ class ProductPageHTMLParser:
         """
         script_tag = self._bs4_parser.find(
             'script', string=re.compile('deviceId')
-            )
+        )
         if script_tag:
             script_text = script_tag.get_text()
             match = re.search(r'deviceId\s*=\s*"(.*?)"', script_text)
@@ -319,7 +328,7 @@ class ProductPageHTMLParser:
                 raise ValueError(
                     'Unable to parse page ID ("deviceId" text '
                     'within the <script/> tag was not matched).'
-                    )
+                )
             try:
                 self._page_id = int(match.group(1))
             except Exception as e:
@@ -328,7 +337,7 @@ class ProductPageHTMLParser:
         raise ValueError(
             'Unable to parse page ID '
             '(<script/> tag with "deviceId" text was not found).'
-            )
+        )
 
     @cached_property
     def location_name(self) -> str:
@@ -345,7 +354,7 @@ class ProductPageHTMLParser:
             return location_name
         raise ValueError(
             'Unable to parse location name (<title/> tag  was not found).'
-            )
+        )
 
     @cached_property
     def products(self) -> tuple[Product, ...]:
@@ -353,9 +362,7 @@ class ProductPageHTMLParser:
         return self.find_products()
 
     def _find_product_data(
-        self,
-        name: typing.Optional[str],
-        id: typing.Optional[int]
+        self, name: typing.Optional[str], id_: typing.Optional[int]
     ) -> bs4.ResultSet:
         """A helper method to find raw HTML data for products matching
         the specified name or ID. Can filter products by both attributes
@@ -364,7 +371,7 @@ class ProductPageHTMLParser:
         Args:
             name (str | None): The name of the product to search for. If None,
             ignores the name attribute in filtering.
-            id (int | None): The ID of the product to search for. If None,
+            id_ (int | None): The ID of the product to search for. If None,
             ignores the ID attribute in filtering.
 
         Returns:
@@ -374,17 +381,17 @@ class ProductPageHTMLParser:
         logger.debug(
             'Searching for products with attributes "name=%s", "id=%s"...',
             name if name else 'any',
-            str(id) if id is not None else 'any'
-            )
+            str(id_) if id_ is not None else 'any',
+        )
         attrs = {'class': lambda value: value and 'product' in value}
         if name is not None:
             attrs['data-name'] = lambda value: (
                 value and (normalize_text(name) in normalize_text(value))
-                )
-        if id is not None:
+            )
+        if id_ is not None:
             attrs['data-id'] = lambda value: (
-                value and (str(id) == normalize_text(value))
-                )
+                value and (str(id_) == normalize_text(value))
+            )
         return self._bs4_parser.find_all('div', attrs=attrs)
 
     def _parse_product_data(self, product_data: bs4.Tag) -> Product:
@@ -399,8 +406,8 @@ class ProductPageHTMLParser:
         """
         logger.debug(
             'Parsing product data for product with attributes "id=%s"...',
-            ProductHTMLParser._find_id_safe(product_data)
-            )
+            ProductHTMLParser._find_id_safe(product_data),
+        )
         price_full, price_curr = ProductHTMLParser.find_price(product_data)
         return Product(
             id_=ProductHTMLParser.find_id(product_data),
@@ -413,13 +420,13 @@ class ProductPageHTMLParser:
             price_full=price_full,
             pic_url=ProductHTMLParser.find_pic_url(product_data),
             location_id=self.page_id,
-            location=self.location_name
-            )
+            location=self.location_name,
+        )
 
     def find_product(
         self,
         name: typing.Optional[str] = None,
-        id: typing.Optional[int] = None
+        id_: typing.Optional[int] = None,
     ) -> Product:
         """Find a single product based on the specified name and/or ID.
 
@@ -428,7 +435,7 @@ class ProductPageHTMLParser:
                 product names are normalized to lowercase ASCII characters for
                 matching, allowing for partial and case-insensitive matches.
                 If None, name filtering is not applied.
-            id (int | None): The ID of the product to filter by. The ID match
+            id_ (int | None): The ID of the product to filter by. The ID match
                 is exact. If None, ID filtering is not applied.
 
         Returns:
@@ -439,29 +446,27 @@ class ProductPageHTMLParser:
                 is not found or if multiple products match the criteria
                 (i.e., the result is not unique).
         """
-        product_data = self._find_product_data(name, id)
+        product_data = self._find_product_data(name, id_)
         if len(product_data) == 0:
             name = name if name else 'any'
-            id_str = str(id) if id is not None else 'any'
+            id_str = str(id_) if id_ is not None else 'any'
             raise ValueError(
                 f'Product with attributes "name={name}", "id={id_str}" '
                 f'was not found.'
-                )
+            )
         if len(product_data) != 1:
             name = name if name else 'any'
-            id_str = str(id) if id is not None else 'any'
+            id_str = str(id_) if id_ is not None else 'any'
             raise ValueError(
                 f'Product with attributes "name={name}", "id={id_str}" '
                 f'is not unique.'
-                )
+            )
         return self._parse_product_data(product_data[0])
 
     def find_products(
-        self,
-        name: typing.Optional[str] = None
+        self, name: typing.Optional[str] = None
     ) -> tuple[Product, ...]:
-        """
-        Find a list of products based on the specified name. If the name
+        """Find a list of products based on the specified name. If the name
         is not specified, all products on the page are returned.
 
         Args:
@@ -490,7 +495,7 @@ class ProductFinder:
         cls,
         product: Product,
         constraint: typing.Optional[typing.Callable[[Product], bool]] = None,
-        **attributes: typing.Any
+        **attributes: typing.Any,
     ) -> bool:
         """Check if a product matches the given attributes and an optional
         constraint.
@@ -511,21 +516,20 @@ class ProductFinder:
                 True if the product matches the given attributes and
                 constraint, False otherwise.
         """
-        if constraint and not constraint(product):
+        if constraint is not None and not constraint(product):
             return False
         return all(
             getattr(product, key) == value for key, value in attributes.items()
-            )
+        )
 
     @classmethod
     def find_product(
         cls,
         products: typing.Iterable[Product],
         constraint: typing.Optional[typing.Callable[[Product], bool]] = None,
-        **attributes: typing.Any
+        **attributes: typing.Any,
     ) -> typing.Optional[Product]:
-        """
-        Find a single product in an iterable of products that matches
+        """Find a single product in an iterable of products that matches
         the given attributes and an optional constraint.
 
         Args:
@@ -555,10 +559,9 @@ class ProductFinder:
         cls,
         products: typing.Iterable[Product],
         constraint: typing.Optional[typing.Callable[[Product], bool]] = None,
-        **attributes
+        **attributes: typing.Any,
     ) -> list[Product]:
-        """
-        Find all products in an iterable of products that match
+        """Find all products in an iterable of products that match
         the given attributes and an optional constraint.
 
         Args:

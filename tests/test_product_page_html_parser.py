@@ -221,7 +221,7 @@ def test_find_product_invalid(
 def test_parse_product_data(
     product: Product, product_page_html_parser: ProductPageHTMLParser
 ):
-    parsed = product_page_html_parser.find_product(id=product.id_)
+    parsed = product_page_html_parser.find_product(id_=product.id_)
     assert parsed.id_ == product.id_
     assert parsed.name == product.name
     assert parsed.category == product.category

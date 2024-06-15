@@ -1,14 +1,13 @@
 from ._parser import (
-    ProductPageHTMLParser,
     ProductFinder,
+    ProductPageHTMLParser,
+    hash_text,
     normalize_text,
-    hash_text
 )
 
-
 __all__ = [
-    'ProductPageHTMLParser',
     'ProductFinder',
+    'ProductPageHTMLParser',
+    'hash_text',
     'normalize_text',
-    'hash_text'
-    ]
+]

@@ -1,7 +1,7 @@
 [project]
 name = "freshpointsync"
-version = "0.1.0"
-description = "Freshpoint.cz web page data parser and syncer."
+version = "0.2.0"
+description = "FreshPoint webpage data parser and syncer."
 readme = "README.rst"
 license = { file = "LICENSE" }
 authors = [
@@ -32,12 +32,13 @@ classifiers = [
 keywords = ["freshpoint", "freshpoint.cz"]
 requires-python = ">=3.8"
 dependencies = [
-    "aiohttp",
-    "certifi",
-    "beautifulsoup4",
-    "lxml",
-    "pydantic",
-    "unidecode"
+    "aiohttp>=3.7",
+    "certifi>=2020.4.5",
+    "beautifulsoup4>=4.9",
+    "lxml>=4.5",
+    "pydantic>=2.0",
+    "typing_extensions>=4.3; python_version<'3.10'",
+    "unidecode>=1.3",
 ]
 
 [project.urls]
@@ -50,9 +51,24 @@ docs = [
   "autodoc-pydantic",
   "sphinx_rtd_theme",
 ]
+lint = [
+  "mypy",
+  "ruff",
+]
 test = [
   "pytest",
   "pytest-asyncio",
+]
+build = [
+  "build",
+  "twine",
+]
+dev = [
+    "tox",
+    "freshpointsync[lint]",
+    "freshpointsync[test]",
+    "freshpointsync[doc]",
+    "freshpointsync[build]",
 ]
 
 [options]
@@ -61,3 +77,69 @@ package_dir = {"" = "src"}
 [build-system]
 requires = ["setuptools>=61.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.ruff]
+line-length = 79
+indent-width = 4
+target-version = "py38"
+
+[tool.ruff.lint]
+select = [
+  "A", "ANN", "ASYNC", "B", "BLE", "COM", "D", "E", "F", "I", "N", "PL", "RUF",
+  "S", "UP", "W", "YTT"
+]
+ignore = [
+  # Documenting dunder methods might not add much value.
+  "D105",
+  # Docstring-related, too restrictive.
+  "D205",
+  # Docstring-related; these have conflicting rules.
+  "D203", "D213",
+  # Ignore too long lines (long lines are handled by the formatter)
+  "E501",
+  # Asserts can be used for internal consistency checking.
+  "S101", "B011",
+  # Catching Exception is valid and safe in some cases.
+  "BLE001",
+  # Related to comment formatting, may conflict with code formatters.
+  "COM812",
+  # Too-many-xx rules, may be too restrictive for more complex code bases.
+  "PLR0904", "PLR0911", "PLR0912", "PLR0913", "PLR0917", "PLR2004", "PLR1702",
+  "PLR0915",
+  # Ignore PEP 604 syntax suggestions, as they are not available in py38.
+  "UP007",
+]
+preview = true
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+  "D100", "D101", "D102", "D103", "D104", "S101", "S106", "ANN001", "ANN002",
+  "ANN003", "ANN201", "ANN202", "ANN204", "ANN205", "PLR6301",
+]
+"docs/source/conf.py" = ["D100", "D103", "A001", "ANN201", "ANN001"]
+
+[tool.ruff.lint.flake8-annotations]
+allow-star-arg-any = true
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+quote-style = "single"
+indent-style = "space"
+line-ending = "auto"
+docstring-code-format = true
+docstring-code-line-length = "dynamic"
+preview = true
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+disallow_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_return_any = true
+warn_unreachable = true
+[[tool.mypy.overrides]]
+module = "tests.*"
+allow_untyped_defs = true

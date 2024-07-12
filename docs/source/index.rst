@@ -3,14 +3,15 @@
 Explore Further
 ---------------
 
-Delve deeper into FreshPointSync with comprehensive guides and references. This
-section provides detailed documentation on key library classes as well as
-the complete API reference. These resources will help you fully leverage
-FreshPointSync's capabilities.
+Detailed documentation on FreshPointSync is available below. This documentation
+provides an in-depth look at FreshPointSync's features and capabilities as well
+as the complete API reference. 
 
 .. toctree::
-   :maxdepth: 3
+   :maxdepth: 2
+   :caption: Chapters
 
+   intro/index
    product/index
    product_page/index
    product_page_hub/index

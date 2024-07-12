@@ -1,39 +1,42 @@
 import asyncio
 import collections.abc
 import enum
+import functools
 import inspect
 import logging
 import sys
-
 from concurrent.futures import Executor
 from typing import (
-    cast,
     Any,
     Awaitable,
     Callable,
     Coroutine,
+    Dict,
     Generic,
     Iterable,
     Iterator,
+    List,
     Literal,
     NamedTuple,
     Optional,
+    Tuple,
     TypeVar,
     Union,
-    TYPE_CHECKING
+    cast,
 )
+
 if sys.version_info >= (3, 10):
     from typing import TypeAlias
 else:
-    # define TypeAlias as a no-op for type checkers in older Python versions
-    if TYPE_CHECKING:
-        TypeAlias = type
-    else:
-        TypeAlias = None
+    from typing_extensions import TypeAlias
+
+if sys.version_info >= (3, 11):
+    from typing import NamedTuple
+else:
+    from typing_extensions import NamedTuple
 
 
-from ..product._product import Product, DiffValueTuple
-
+from ..product._product import DiffValueTuple, Product
 
 logger = logging.getLogger('freshpointsync.update')
 """Logger for the `freshpointsync.update` module."""
@@ -75,8 +78,8 @@ class CallableRunner:
     @staticmethod
     def _log_task_or_future_done(
         task_or_future: Union[asyncio.Task, asyncio.Future],
-        type_: Literal["Task", "Future"],
-        name: str
+        type_: Literal['Task', 'Future'],
+        name: str,
     ) -> None:
         """Log the result of a completed asyncio Task or Future.
 
@@ -100,18 +103,20 @@ class CallableRunner:
             if exc_desc:
                 logger.warning(
                     '%s "%s" raised an exception (%s: %s)',
-                    type_, name, exc_type, exc_desc
-                    )
+                    type_,
+                    name,
+                    exc_type,
+                    exc_desc,
+                )
             else:
                 logger.warning(
-                    '%s "%s" raised an exception (%s)',
-                    type_, name, exc_type
-                    )
+                    '%s "%s" raised an exception (%s)', type_, name, exc_type
+                )
 
     @staticmethod
     def _log_caught_exception(
         exc: Exception,
-        type_: Literal["Task", "Future"],
+        type_: Literal['Task', 'Future'],
         name: str,
     ) -> None:
         """Log a warning for an exception caught from a Task or Future
@@ -129,14 +134,10 @@ class CallableRunner:
         exc_type, exc_desc = type(exc).__name__, str(exc)
         if exc_desc:
             logger.warning(
-                '%s "%s" failed (%s: %s)',
-                type_, name, exc_type, exc_desc
-                )
+                '%s "%s" failed (%s: %s)', type_, name, exc_type, exc_desc
+            )
         else:
-            logger.warning(
-                '%s "%s" failed (%s)',
-                type_, name, exc_type
-                )
+            logger.warning('%s "%s" failed (%s)', type_, name, exc_type)
 
     @staticmethod
     def _get_awaitable_name(awaitable: Awaitable) -> str:
@@ -178,7 +179,7 @@ class CallableRunner:
             raise  # re-raise to ensure cancellation is propagated
         except Exception as exc:
             awaitable_name = self._get_awaitable_name(awaitable)
-            self._log_caught_exception(exc, "Task", awaitable_name)
+            self._log_caught_exception(exc, 'Task', awaitable_name)
             return None
 
     def run_async(
@@ -186,8 +187,8 @@ class CallableRunner:
         func: Callable[..., Coroutine[Any, Any, T]],
         *func_args: Any,
         run_safe: bool = True,
-        done_callback: Optional[Callable[[asyncio.Task], Any]] = None
-    ) -> asyncio.Task[Optional[T]]:
+        done_callback: Optional[Callable[[asyncio.Task], Any]] = None,
+    ) -> 'asyncio.Task[Optional[T]]':
         """Schedule a function that returns a coroutine to be run,
         optionally with error handling and a completion callback.
 
@@ -220,8 +221,8 @@ class CallableRunner:
         self.tasks.add(task)
         task.add_done_callback(self.tasks.discard)
         task.add_done_callback(
-            lambda t: self._log_task_or_future_done(t, "Task", name)
-            )
+            lambda t: self._log_task_or_future_done(t, 'Task', name)
+        )
         if done_callback:
             task.add_done_callback(done_callback)
         return task
@@ -242,7 +243,9 @@ class CallableRunner:
         except AttributeError:
             return repr(func)
 
-    def _run_sync_safe(self, func: Callable[..., T], *args) -> Optional[T]:
+    def _run_sync_safe(
+        self, func: Callable[..., T], *args: Any
+    ) -> Optional[T]:
         """Call a synchronous function with added error handling that
         catches and logs exceptions. Note that the `asyncio.CancelledError`
         exceptions are re-raised to propagate cancellation.
@@ -261,17 +264,17 @@ class CallableRunner:
             raise  # re-raise to ensure cancellation is propagated
         except Exception as exc:
             name = self._get_func_name(func)
-            self._log_caught_exception(exc, "Future", name)
+            self._log_caught_exception(exc, 'Future', name)
             return None
 
     def run_sync(
         self,
         func: Callable[..., T],
-        *func_args,
+        *func_args: Any,
         run_safe: bool = True,
         run_blocking: bool = True,
-        done_callback: Optional[Callable[[asyncio.Future], Any]] = None
-    ) -> asyncio.Future[Optional[T]]:
+        done_callback: Optional[Callable[[asyncio.Future], Any]] = None,
+    ) -> 'asyncio.Future[Optional[T]]':
         """Schedule a synchronous function to be run in a blocking or
         a non-blocking manner, optionally with error handling and
         a completion callback.
@@ -328,17 +331,15 @@ class CallableRunner:
             if run_safe:
                 future = loop.run_in_executor(
                     self.executor, self._run_sync_safe, func, *func_args
-                    )
+                )
             else:
-                future = loop.run_in_executor(
-                    self.executor, func, *func_args
-                    )
+                future = loop.run_in_executor(self.executor, func, *func_args)
             self.futures.add(future)
             future.add_done_callback(self.futures.discard)
         # add a callback to log the completion of the future
         future.add_done_callback(
-            lambda f: self._log_task_or_future_done(f, "Future", name)
-            )
+            lambda f: self._log_task_or_future_done(f, 'Future', name)
+        )
         # add an optional callback to be called when the future completes
         if done_callback:
             future.add_done_callback(done_callback)
@@ -402,21 +403,22 @@ class ProductUpdateEvent(enum.Enum):
     occur to a product on the product page. Each member represents a specific
     type of update event for easy identification and handling.
     """
-    PRODUCT_ADDED = "product_added"
+
+    PRODUCT_ADDED = 'product_added'
     """Indicates that a new product has been listed on the product page."""
-    PRODUCT_UPDATED = "product_updated"
+    PRODUCT_UPDATED = 'product_updated'
     """Indicates any update to a product's information and state."""
-    QUANTITY_UPDATED = "quantity_updated"
+    QUANTITY_UPDATED = 'quantity_updated'
     """Indicates that the stock quantity of a product has been updated."""
-    PRICE_UPDATED = "price_updated"
+    PRICE_UPDATED = 'price_updated'
     """Indicates that the pricing of a product has changed, including both
     full price and current sale price.
     """
-    OTHER_UPDATED = "other_updated"
+    OTHER_UPDATED = 'other_updated'
     """Indicates an update to the product's metadata,
     for example, a change of the illustration picture URL.
     """
-    PRODUCT_REMOVED = "product_removed"
+    PRODUCT_REMOVED = 'product_removed'
     """Indicates that a product has been removed from the product page."""
 
 
@@ -429,7 +431,8 @@ class ProductUpdateContext(collections.abc.Mapping):
     This class is designed to encapsulate the update event context data
     passed to event handlers during product update events.
     """
-    def __init__(self, __kwargs: dict[Any, Any]) -> None:
+
+    def __init__(self, __kwargs: Dict[Union[str, Any], Any]) -> None:
         super().__init__()
         self.__kwargs = __kwargs
 
@@ -443,7 +446,7 @@ class ProductUpdateContext(collections.abc.Mapping):
         """
         return f'{self.__class__.__name__}({self.__kwargs})'
 
-    def __getitem__(self, key: Any) -> Any:
+    def __getitem__(self, key: object) -> object:
         """Returns the value for the given key from the internal context data.
 
         Args:
@@ -482,17 +485,22 @@ class ProductUpdateContext(collections.abc.Mapping):
             T: The value of the attribute if found, otherwise the default value.
         """
         if attr in self.__kwargs:
-            return self.__kwargs[attr]
+            return self.__kwargs[attr]  # type: ignore
         if self.product_new:
-            return getattr(self.product_new, attr)
-        elif self.product_old:
-            return getattr(self.product_old, attr)
+            return getattr(self.product_new, attr)  # type: ignore
+        if self.product_old:
+            return getattr(self.product_old, attr)  # type: ignore
         return default
 
     @property
     def event(self) -> ProductUpdateEvent:
         """The type of product update event that occurred."""
-        return self.__kwargs['event']
+        return self.__kwargs['event']  # type: ignore
+
+    @property
+    def timestamp(self) -> float:
+        """The timestamp of the product update event."""
+        return self.__get_product_attr('timestamp', 0)
 
     @property
     def product_id(self) -> int:
@@ -523,34 +531,34 @@ class ProductUpdateContext(collections.abc.Mapping):
         return self.__get_product_attr('location_id', 0)
 
     @property
-    def location_name(self) -> str:
+    def location(self) -> str:
         """Name of the product location.
         If not available, defaults to an empty string.
         """
-        return self.__get_product_attr('location_name', '')
+        return self.__get_product_attr('location', '')
 
     @property
-    def location_name_lowercase_ascii(self) -> str:
+    def location_lowercase_ascii(self) -> str:
         """Lowercase ASCII representation of the location name.
         If not available, defaults to an empty string.
         """
-        return self.__get_product_attr('location_name_lowercase_ascii', '')
+        return self.__get_product_attr('location_lowercase_ascii', '')
 
     @property
     def product_new(self) -> Optional[Product]:
         """New state of the product after the update.
         If not available, defaults to None.
         """
-        return self.__kwargs['product_new']
+        return self.__kwargs['product_new']  # type: ignore
 
     @property
     def product_old(self) -> Optional[Product]:
         """Previous state of the product before the update.
         If not available, defaults to None.
         """
-        return self.__kwargs['product_old']
+        return self.__kwargs['product_old']  # type: ignore
 
-    def asdict(self) -> dict[str, Any]:
+    def asdict(self) -> Dict[Union[str, object], object]:
         """Convert the context data to a dictionary.
 
         Returns:
@@ -565,7 +573,7 @@ class HandlerValidator:
     """
 
     @classmethod
-    def _is_valid_is_async(cls, handler: Any) -> tuple[bool, bool]:
+    def _is_valid_is_async(cls, handler: object) -> Tuple[bool, bool]:
         """Determine if a given handler is valid based on its signature and
         whether it is an asynchronous coroutine or a synchronous function
         or method.
@@ -580,20 +588,23 @@ class HandlerValidator:
                 or not (False) and the second value indicates whether
                 the handler is an asynchronous (True) or synchronous (False).
         """
+        while isinstance(handler, functools.partial):
+            handler = handler.func
         if not callable(handler):
             return False, False
-        if inspect.iscoroutinefunction(handler):
-            sig = inspect.signature(handler)
-            return (len(sig.parameters) == 1), True
-        elif inspect.isfunction(handler) or inspect.ismethod(handler):
-            sig = inspect.signature(handler)
-            return (len(sig.parameters) == 1), False
-        elif hasattr(handler, '__call__'):
-            return cls._is_valid_is_async(handler.__call__)
-        return False, False
+        try:
+            is_valid_sig = len(inspect.signature(handler).parameters) == 1
+            is_async = inspect.iscoroutinefunction(handler)
+            if not is_async:
+                call_method = getattr(handler, '__call__', None)  # noqa: B004
+                is_async = inspect.iscoroutinefunction(call_method)
+            return is_valid_sig, is_async
+        except Exception as e:
+            logger.warning('Failed to validate handler "%s": %s', handler, e)
+            return False, False
 
     @classmethod
-    def is_valid_async_handler(cls, handler: Any) -> bool:
+    def is_valid_async_handler(cls, handler: object) -> bool:
         """Check if a handler is an asynchronous coroutine function with
         a valid signature (accepts exactly one argument).
 
@@ -608,7 +619,7 @@ class HandlerValidator:
         return is_valid and is_async
 
     @classmethod
-    def is_valid_sync_handler(cls, handler: Any) -> bool:
+    def is_valid_sync_handler(cls, handler: object) -> bool:
         """Check if a handler is a synchronous function or method with a valid
         signature (accepts exactly one argument).
 
@@ -623,7 +634,7 @@ class HandlerValidator:
         return is_valid and not is_async
 
     @classmethod
-    def is_valid_handler(cls, handler: Any) -> bool:
+    def is_valid_handler(cls, handler: object) -> bool:
         """Check if a handler has a valid signature and is a valid function or
         method, regardless of whether it is synchronous or asynchronous.
 
@@ -637,7 +648,7 @@ class HandlerValidator:
         return is_valid
 
 
-def is_valid_handler(handler: Any) -> bool:
+def is_valid_handler(handler: object) -> bool:
     """Validate a handler based on its signature and whether it is an
     asynchronous coroutine or a synchronous function or method.
 
@@ -650,9 +661,7 @@ def is_valid_handler(handler: Any) -> bool:
     return HandlerValidator.is_valid_handler(handler)
 
 
-SyncHandler: TypeAlias = Callable[
-    [ProductUpdateContext], None
-    ]
+SyncHandler: TypeAlias = Callable[[ProductUpdateContext], None]
 """Type alias for a synchronous handler function. Expects a single argument
 of type `ProductUpdateContext` and returns `None`.
 """
@@ -660,7 +669,7 @@ of type `ProductUpdateContext` and returns `None`.
 
 AsyncHandler: TypeAlias = Callable[
     [ProductUpdateContext], Coroutine[Any, Any, None]
-    ]
+]
 """Type alias for an asynchronous handler function. Expects a single argument
 of type `ProductUpdateContext` and returns a coroutine that resolves to `None`.
 """
@@ -676,6 +685,7 @@ of type `ProductUpdateContext` and returns a coroutine that resolves to `None`.
 
 class HandlerExecParamsTuple(NamedTuple):
     """A named tuple for storing handler execution parameters."""
+
     run_safe: bool
     """A flag indicating whether the handler should be executed in a "safe"
     manner, meaning any exceptions raised by the handler will be caught,
@@ -700,17 +710,18 @@ HandlerType = TypeVar('HandlerType', SyncHandler, AsyncHandler)
 
 class HandlerDataTuple(NamedTuple, Generic[HandlerType]):
     """A named tuple for storing handler data."""
+
     handler: HandlerType
     """The handler function to be executed after a certain event occurs."""
     exec_params: HandlerExecParamsTuple
     """The hanlder function execution parameters."""
 
 
-SyncHandlerList: TypeAlias = list[HandlerDataTuple[SyncHandler]]
+SyncHandlerList: TypeAlias = List[HandlerDataTuple[SyncHandler]]
 """A list of `HandlerDataTuple` records of synchronous handlers."""
 
 
-AsyncHandlerList: TypeAlias = list[HandlerDataTuple[AsyncHandler]]
+AsyncHandlerList: TypeAlias = List[HandlerDataTuple[AsyncHandler]]
 """A list of `HandlerDataTuple` records of asynchronous handlers."""
 
 
@@ -722,6 +733,7 @@ class ProductUpdateEventPublisher:
     to specific events and facilitates broadcasting events to all relevant
     handlers.
     """
+
     def __init__(self) -> None:
         self.context: dict[Any, Any] = {}  # global persistent context
         self.runner = CallableRunner()
@@ -730,7 +742,7 @@ class ProductUpdateEventPublisher:
 
     @staticmethod
     def _is_in_subscribers_list(
-        handler: Handler, subscribers: list[HandlerDataTuple]
+        handler: Handler, subscribers: List[HandlerDataTuple]
     ) -> bool:
         """Check if a handler is already present in the list of subscribers.
 
@@ -750,10 +762,9 @@ class ProductUpdateEventPublisher:
 
     @staticmethod
     def _remove_from_subscribers_list(
-        handler: Handler, subscribers: list[HandlerDataTuple]
+        handler: Handler, subscribers: List[HandlerDataTuple]
     ) -> None:
-        """
-        Remove a handler from the list of subscribers.
+        """Remove a handler from the list of subscribers.
 
         This method iterates over the subscribers list to find and remove
         the provided handler based on object identity. If the handler
@@ -775,7 +786,7 @@ class ProductUpdateEventPublisher:
         handler: Handler,
         run_safe: bool,
         run_blocking: bool,
-        handler_done_callback: Optional[Callable[[asyncio.Future], Any]]
+        handler_done_callback: Optional[Callable[[asyncio.Future], Any]],
     ) -> None:
         """Subscribe a synchronous handler to a specific product update event.
 
@@ -788,6 +799,10 @@ class ProductUpdateEventPublisher:
             handler: The synchronous handler to be subscribed.
             run_safe: Indicates whether the handler should be called in
                 a "safe" manner, with exceptions caught and handled.
+            run_blocking: Indicates whether the handler should be called in
+                a blocking manner, i.e., called directly without using an
+                executor. If False, the handler is executed in a non-blocking
+                manner in a separate thread.
             handler_done_callback: An optional callback function to be called
                 when the handler completes its execution.
         """
@@ -796,7 +811,7 @@ class ProductUpdateEventPublisher:
             handler = cast(SyncHandler, handler)
             params = HandlerExecParamsTuple(
                 run_safe, run_blocking, handler_done_callback
-                )
+            )
             subscribers.append(HandlerDataTuple(handler, params))
 
     def _subscribe_async(
@@ -804,7 +819,7 @@ class ProductUpdateEventPublisher:
         event: ProductUpdateEvent,
         handler: Handler,
         run_safe: bool,
-        handler_done_callback: Optional[Callable[[asyncio.Future], Any]]
+        handler_done_callback: Optional[Callable[[asyncio.Future], Any]],
     ) -> None:
         """Subscribe an asynchronous handler to a specific product update
         event.
@@ -826,18 +841,18 @@ class ProductUpdateEventPublisher:
             handler = cast(AsyncHandler, handler)
             params = HandlerExecParamsTuple(
                 run_safe, False, handler_done_callback
-                )
+            )
             subscribers.append(HandlerDataTuple(handler, params))
 
     @staticmethod
     def _validate_event(
-        event: Union[ProductUpdateEvent, Iterable[ProductUpdateEvent], None]
-    ) -> list[ProductUpdateEvent]:
+        event: Union[ProductUpdateEvent, Iterable[ProductUpdateEvent], None],
+    ) -> List[ProductUpdateEvent]:
         """Validate the provided event(s) and return a list of event objects.
 
         Args:
-            event (Union[ProductUpdateEvent, Iterable[ProductUpdateEvent],
-            None]): The event or events to validate.
+            event (Union[ProductUpdateEvent, Iterable[ProductUpdateEvent], None], optional):
+                The event or events to validate.
 
         Raises:
             TypeError: If the event is not a valid type.
@@ -849,19 +864,24 @@ class ProductUpdateEventPublisher:
             return list(ProductUpdateEvent)
         if isinstance(event, ProductUpdateEvent):
             return [event]
-        if isinstance(event, Iterable) and not isinstance(event, str):
+        if isinstance(event, Iterable) and not isinstance(event, str):  # type: ignore
             return [ProductUpdateEvent(e) for e in event]
-        raise TypeError("Event must be a ProductUpdateEvent or an iterable.")
+        raise TypeError(
+            f'Event must be a ProductUpdateEvent or an iterable of '
+            f'ProductUpdateEvent, got {type(event).__name__} instead.'
+        )
 
     def subscribe(
         self,
         handler: Handler,
         event: Union[
             ProductUpdateEvent, Iterable[ProductUpdateEvent], None
-            ] = None,
+        ] = None,
         run_safe: bool = True,
         run_blocking: bool = True,
-        handler_done_callback: Optional[Callable[[asyncio.Future], Any]] = None
+        handler_done_callback: Optional[
+            Callable[[asyncio.Future], Any]
+        ] = None,
     ) -> None:
         """Subscribe a handler to specific product update event(s). The handler
         will be invoked when the event is posted, with the event context
@@ -874,10 +894,9 @@ class ProductUpdateEventPublisher:
         Args:
             handler (Handler): The function or callable to invoke for
                 the event(s).
-            event (Union[ProductUpdateEvent, Iterable[ProductUpdateEvent],
-            None], optional): The type of product update event(s) to
-                subscribe to. If None, the handler will be subscribed to
-                all events.
+            event (Union[ProductUpdateEvent, Iterable[ProductUpdateEvent], None], optional):
+                The type of product update event(s) to subscribe to. If None,
+                the handler will be subscribed to all events.
             run_safe (bool, optional): If True, exceptions raised by
                 the handler are caught and logged. If False, exceptions are
                 propagated and must be handled by the caller. Defaults to True.
@@ -898,25 +917,23 @@ class ProductUpdateEventPublisher:
         events = self._validate_event(event)
         is_valid, is_async = HandlerValidator._is_valid_is_async(handler)
         if not is_valid:
-            raise TypeError("Handler signature is invalid.")
+            raise TypeError('Handler signature is invalid.')
         callback = handler_done_callback
         if is_async:
-            for event in events:
-                self._subscribe_async(
-                    event, handler, run_safe, callback
-                    )
+            for event_ in events:
+                self._subscribe_async(event_, handler, run_safe, callback)
         else:
-            for event in events:
+            for event_ in events:
                 self._subscribe_sync(
-                    event, handler, run_safe, run_blocking, callback
-                    )
+                    event_, handler, run_safe, run_blocking, callback
+                )
 
     def unsubscribe(
         self,
         handler: Optional[Handler] = None,
         event: Union[
             ProductUpdateEvent, Iterable[ProductUpdateEvent], None
-            ] = None
+        ] = None,
     ) -> None:
         """Unsubscribe a handler from specific product update event(s),
         or all handlers if no specific handler is provided. The unsubscribed
@@ -925,10 +942,9 @@ class ProductUpdateEventPublisher:
         Args:
             handler (Handler): The handler to be unsubscribed from the
                 event(s). if None, all handlers for the event are unsubscribed.
-            event (Union[ProductUpdateEvent, Iterable[ProductUpdateEvent],
-            None], optional): The type of product update event(s)
-                to unsubscribe from. If None, the handler(s) will be subscribed
-                from all events.
+            event (Union[ProductUpdateEvent, Iterable[ProductUpdateEvent], None], optional):
+                The type of product update event(s) to unsubscribe from.
+                If None, the handler(s) will be subscribed from all events.
         """
         events = self._validate_event(event)
         for e in events:
@@ -948,16 +964,16 @@ class ProductUpdateEventPublisher:
         handler: Optional[Handler] = None,
         event: Union[
             ProductUpdateEvent, Iterable[ProductUpdateEvent], None
-            ] = None
+        ] = None,
     ) -> bool:
         """Check if there are any subscribers for the given event(s).
 
         Args:
             handler (Optional[Handler], optional): The handler to check for
                 subscription. If None, all handlers are checked.
-            event (Union[ProductUpdateEvent, Iterable[ProductUpdateEvent],
-            None], optional): The type of product update event(s) to check for
-                subscribers. If None, all events are checked.
+            event (Union[ProductUpdateEvent, Iterable[ProductUpdateEvent], None], optional):
+                The type of product update event(s) to check for subscribers.
+                If None, all events are checked.
 
         Returns:
             bool: True if there are subscribers for the event, False otherwise.
@@ -980,7 +996,7 @@ class ProductUpdateEventPublisher:
         event: ProductUpdateEvent,
         product_new: Optional[Product],
         product_old: Optional[Product],
-        **kwargs: Any
+        **kwargs: Any,
     ) -> ProductUpdateContext:
         """Construct a `ProductUpdateContext` instance from the provided
         product and additional parameters, merging the global context data with
@@ -988,6 +1004,8 @@ class ProductUpdateEventPublisher:
         (the latter takes precedence).
 
         Args:
+            event (ProductUpdateEvent): The type of product update event
+                to be broadcasted.
             product_new (Optional[Product]): The updated product instance,
                 or None if not applicable.
             product_old (Optional[Product]): The original product instance
@@ -1010,7 +1028,7 @@ class ProductUpdateEventPublisher:
         event: ProductUpdateEvent,
         product_new: Optional[Product],
         product_old: Optional[Product],
-        **kwargs: Any
+        **kwargs: Any,
     ) -> None:
         """Notify registered handlers about a specific product update event.
 
@@ -1035,27 +1053,27 @@ class ProductUpdateEventPublisher:
         if event in self.async_subscribers:
             context = self.get_context(
                 event, product_new, product_old, **kwargs
-                )
+            )
             for async_sub in self.async_subscribers[event]:
                 self.runner.run_async(
                     async_sub.handler,
                     context,
                     run_safe=async_sub.exec_params.run_safe,
-                    done_callback=async_sub.exec_params.done_callback
-                    )
+                    done_callback=async_sub.exec_params.done_callback,
+                )
         if event in self.sync_subscribers:
             if context is None:
                 context = self.get_context(
                     event, product_new, product_old, **kwargs
-                    )
+                )
             for sync_sub in self.sync_subscribers[event]:
                 self.runner.run_sync(
                     sync_sub.handler,
                     context,
                     run_safe=sync_sub.exec_params.run_safe,
                     run_blocking=sync_sub.exec_params.run_blocking,
-                    done_callback=sync_sub.exec_params.done_callback
-                    )
+                    done_callback=sync_sub.exec_params.done_callback,
+                )
 
 
 class ProductCacheUpdater:
@@ -1067,10 +1085,11 @@ class ProductCacheUpdater:
     product information. It provides methods to create, delete, and update
     products in the cache and to trigger appropriate events for each action.
     """
+
     def __init__(
         self,
-        products: dict[int, Product],
-        publisher: ProductUpdateEventPublisher
+        products: Dict[int, Product],
+        publisher: ProductUpdateEventPublisher,
     ) -> None:
         """Initialize a `ProductCacheUpdater` instance.
 
@@ -1100,8 +1119,8 @@ class ProductCacheUpdater:
             event=ProductUpdateEvent.PRODUCT_ADDED,
             product_new=product,
             product_old=None,
-            **kwargs
-            )
+            **kwargs,
+        )
 
     def delete_product(self, product: Product, **kwargs: Any) -> None:
         """Remove a product from the cache and posts a `PRODUCT_REMOVED` event.
@@ -1118,15 +1137,15 @@ class ProductCacheUpdater:
             event=ProductUpdateEvent.PRODUCT_REMOVED,
             product_new=None,
             product_old=product,
-            **kwargs
-            )
+            **kwargs,
+        )
 
     def update_product(
         self,
         product: Product,
         product_cached: Product,
-        diff: dict[str, DiffValueTuple],
-        **kwargs: Any
+        diff: Dict[str, DiffValueTuple],
+        **kwargs: Any,
     ) -> None:
         """Update a product in the cache and post events reflecting
         the specific changes occured.
@@ -1143,6 +1162,8 @@ class ProductCacheUpdater:
                 after the update.
             product_cached (Product): The original product state
                 before the update.
+            diff (dict[str, DiffValueTuple]): A dictionary of differences
+                between the new and old product states.
             **kwargs (Any): Additional keyword arguments to include
                 in the update event context.
         """
@@ -1164,16 +1185,16 @@ class ProductCacheUpdater:
                 event=event,
                 product_new=product,
                 product_old=product_cached,
-                **kwargs
-                )
+                **kwargs,
+            )
 
     async def update(
         self,
         products: Iterable[Product],
         await_handlers: bool = False,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> None:
-        """Processe a batch of product updates, adding, deleting, or updating
+        """Process a batch of product updates, adding, deleting, or updating
         products as necessary.
 
         This method iterates through a given iterable of products, updating
@@ -1202,7 +1223,7 @@ class ProductCacheUpdater:
                 if diff:
                     self.update_product(
                         product, product_cached, diff, **kwargs
-                        )
+                    )
         # optionally await the triggered handlers
         if await_handlers:
             await self._publisher.runner.await_all()

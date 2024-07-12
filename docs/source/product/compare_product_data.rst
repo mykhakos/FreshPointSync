@@ -2,55 +2,53 @@
 Comparing Product Snapshots
 ===========================
 
-This chapter demonstrates how to monitor changes in product data over time using
-the ``Product`` class. By comparing snapshots of a product at different points
-in time, you can analyze changes such as price and quantity updates. This will
-help you understand how the ``Product`` class can be used to track and manage
-product information effectively.
+Product listings can change frequently due to price adjustments, stock updates,
+or other modifications. You can track these changes by comparing ``Product``
+snapshots of the same product at different points in time.
 
 We start with two snapshots of the same product taken at different times.
 
 .. code-block:: python
 
-    from freshpointsync import Product
     from time import time
+    from freshpointsync import Product
 
     # create the previous product snapshot (10 seconds ago)
-    prod_prev = Product(
-        id_=195,
-        name='Harboe Cola',
-        category='Nápoje',
-        is_vegetarian=False,
+    product_prev = Product(
+        id_=99,
+        name='Pappudio Croissant sýrový',
+        category='Sendviče, wrapy, tortilly, bagety',
+        is_vegetarian=True,
         is_gluten_free=False,
-        quantity=10,
-        price_curr=25.5,
-        price_full=30,
-        pic_url='',
+        quantity=4,
+        price_curr=40.26,
+        price_full=57.52,
+        pic_url='',  # omitted for brevity
         location_id=296,
         location='Elektroline',
         timestamp=time() - 10  # timestamp ten seconds ago
     )
 
     # create the current product snapshot (current time)
-    prod_curr = Product(
-        id_=195,
-        name='Harboe Cola',
-        category='Nápoje',
-        is_vegetarian=False,
+    product_curr = Product(
+        id_=99,
+        name='Pappudio Croissant sýrový',
+        category='Sendviče, wrapy, tortilly, bagety',
+        is_vegetarian=True,
         is_gluten_free=False,
-        quantity=5,
-        price_curr=30,
-        price_full=30,
-        pic_url='',
+        quantity=0,
+        price_curr=57.52,
+        price_full=57.52,
+        pic_url='',  # omitted for brevity
         location_id=296,
         location='Elektroline',
-        timestamp=time()  # current timestamp
+        timestamp=time()  # timestamp ten seconds ago
     )
 
-In this example, the previous snapshot of the *Harboe Cola* beverage has
-a quantity of 10 and is on sale for 25.5 CZK, while the current snapshot has
-a quantity of 5 and costs 30 CZK. The product ID, name, category, and location
-remain the same.
+In this example, we create two snapshots of the "Pappudio Croissant sýrový"
+product. The previous snapshot has a quantity of 4 pieces and is on sale for
+40.26 CZK, while the current snapshot is out of stock and costs 57.52 CZK.
+The product ID, name, category, and location remain the same.
 
 Comparing Product Timestamps
 ----------------------------
@@ -60,47 +58,68 @@ snapshot by comparing their timestamps using the ``is_newer_than`` method.
 .. code-block:: python
 
     print(
-        f'Product with timestamp: {prod_curr.timestamp} is newer than '
-        f'the previous product with timestamp: {prod_prev.timestamp}: '
-        f'{prod_curr.is_newer_than(prod_prev)}',
+        f'Product with timestamp: {product_curr.timestamp} is newer than '
+        f'the previous product with timestamp: {product_prev.timestamp}: '
+        f'{product_curr.is_newer_than(product_prev)}',
     )
 
 Comparing Product Price
 -----------------------
-Directly comparing current prices of the two product snapshots might be
-sufficient in some cases. However, more comprehensive insights can be gained,
-such as whether the product has just gone on sale or if the sale rate has
-changed. This information is available through the ``ProductPriceUpdateInfo``
+We can compare the prices of the two product snapshots to determine the direct
+price change as well as gain comprehensive insights into the sale status of the
+product. This information is available through the ``ProductPriceUpdateInfo``
 object, which is returned by the ``compare_price`` method.
 
 .. code-block:: python
 
-    price_info = prod_prev.compare_price(new=prod_curr)
+    price_info = product_prev.compare_price(new=product_curr)
     print(
         f'Current price increase: {price_info.price_curr_increase} CZK\n'
         f'Sale ended: {price_info.sale_ended}'
     )
 
-In this example, the current price of the product has increased by 4.5 CZK, and
-the product is no longer on sale.
+In this example, the current price of the product has increased by 17.26 CZK,
+and the product is no longer on sale.
 
 Comparing Product Quantity
 --------------------------
-We can also compare the stock count of the two product snapshots. Analyzing
-the quantity changes with the `ProductQuantityUpdateInfo` object, which
-is returned by the `compare_quantity` method, provides insights such as whether
-the product has been restocked or is out of stock.
+We can analyze the stock changes with the `ProductQuantityUpdateInfo` object,
+which is returned by the `compare_quantity` method. It provides information on
+whether the product quantity has decreased, if the product is out of stock, etc.
 
 .. code-block:: python
 
-    quantity_info = prod_prev.compare_quantity(new=prod_curr)
+    quantity_info = product_prev.compare_quantity(new=product_curr)
     print(
         f'Quantity decrease: {quantity_info.stock_decrease} pieces\n'
         f'Is out of stock: {quantity_info.stock_depleted}'
     )
 
-In this example, the quantity of the product has decreased by 5 pieces, but
-the product is not out of stock.
+In this example, the quantity of the product has decreased by 4 pieces, and
+the product is now out of stock.
+
+Getting Full Product Diffence
+-----------------------------
+You can get the full product difference by calling the ``diff`` method of the
+``Product`` class. This method compares the fields of this product with the
+fields of another product instance to identify which fields differ between them.
+
+.. code-block:: python
+
+    diff = product_prev.diff(product_curr, exclude={'timestamp'})
+    for field, diff_value in diff.items():
+        print(f'{field}: {diff_value.value_self} -> {diff_value.value_other}')
+
+You can alter the returned dictionary by providing optional keyword arguments
+to the ``diff`` method. It accepts any argument that the ``model_dump`` method
+accepts. You can thus include and exclude certain fields from the comparison,
+pick the key format, and more.
+
+Each key in the dictionary a string representing an attribute name, and the
+value is a named tuple containing the differing values between the two products.
+The named tuple has two fields: ``value_self`` and ``value_other``, which
+represent the value of the attribute in the first and second product,
+respectively.
 
 Complete Example
 ----------------
@@ -111,57 +130,56 @@ Complete Example
     from time import time
 
     # create the previous product snapshot (10 seconds ago)
-    prod_prev = Product(
-        id_=195,
-        name='Harboe Cola',
-        category='Nápoje',
-        is_vegetarian=False,
+    product_prev = Product(
+        id_=99,
+        name='Pappudio Croissant sýrový',
+        category='Sendviče, wrapy, tortilly, bagety',
+        is_vegetarian=True,
         is_gluten_free=False,
-        quantity=10,
-        price_curr=25.5,
-        price_full=30,
-        pic_url='',
+        quantity=4,
+        price_curr=40.26,
+        price_full=57.52,
+        pic_url='',  # omitted for brevity
         location_id=296,
         location='Elektroline',
         timestamp=time() - 10  # timestamp ten seconds ago
     )
 
     # create the current product snapshot (current time)
-    prod_curr = Product(
-        id_=195,
-        name='Harboe Cola',
-        category='Nápoje',
-        is_vegetarian=False,
+    product_curr = Product(
+        id_=99,
+        name='Pappudio Croissant sýrový',
+        category='Sendviče, wrapy, tortilly, bagety',
+        is_vegetarian=True,
         is_gluten_free=False,
-        quantity=5,
-        price_curr=30,
-        price_full=30,
-        pic_url='',
+        quantity=0,
+        price_curr=57.52,
+        price_full=57.52,
+        pic_url='',  # omitted for brevity
         location_id=296,
         location='Elektroline',
-        timestamp=time()  # current timestamp
+        timestamp=time()  # timestamp ten seconds ago
     )
 
-    # check if the current snapshot is newer
     print(
-        f'Product with timestamp "{prod_curr.timestamp}" is newer than '
-        f'the previous product with timestamp "{prod_prev.timestamp}": '
-        f'{prod_curr.is_newer_than(prod_prev)}',
+        f'Product with timestamp: {product_curr.timestamp} is newer than '
+        f'the previous product with timestamp: {product_prev.timestamp}: '
+        f'{product_curr.is_newer_than(product_prev)}',
     )
 
-    # check if the product is on sale
-    print(f'Product "{prod_curr.name}" is on sale: {prod_curr.is_on_sale}')
-
-    # compare prices
-    price_info = prod_prev.compare_price(new=prod_curr)
+    price_info = product_prev.compare_price(new=product_curr)
     print(
         f'Current price increase: {price_info.price_curr_increase} CZK\n'
         f'Sale ended: {price_info.sale_ended}'
     )
 
-    # compare quantities
-    quantity_info = prod_prev.compare_quantity(new=prod_curr)
+    quantity_info = product_prev.compare_quantity(new=product_curr)
     print(
         f'Quantity decrease: {quantity_info.stock_decrease} pieces\n'
         f'Is out of stock: {quantity_info.stock_depleted}'
     )
+
+    diff = product_prev.diff(product_curr, exclude={'timestamp'})
+    for field, diff_value in diff.items():
+        print(f'{field}: {diff_value.value_self} -> {diff_value.value_other}')
+

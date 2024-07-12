@@ -1,19 +1,27 @@
-from __future__ import annotations
-
+import sys
 import time
-import typing
-
 from dataclasses import dataclass
+from typing import Any, Dict
+
 from pydantic import (
-    BaseModel, ConfigDict, Field, NonNegativeFloat, NonNegativeInt
+    BaseModel,
+    ConfigDict,
+    Field,
+    NonNegativeFloat,
+    NonNegativeInt,
 )
 from pydantic.alias_generators import to_camel
 from unidecode import unidecode
 
+if sys.version_info >= (3, 11):
+    from typing import NamedTuple
+else:
+    from typing_extensions import NamedTuple
+
 
 DEFAULT_PIC_URL = (
-    r"https://images.weserv.nl/?url=http://freshpoint.freshserver.cz/"
-    r"backend/web/media/photo/1_f587dd3fa21b22.jpg"
+    r'https://images.weserv.nl/?url=http://freshpoint.freshserver.cz/'
+    r'backend/web/media/photo/1_f587dd3fa21b22.jpg'
 )
 """Default picture URL for a product.
 The URL points to an image hosted on the FreshPoint server.
@@ -42,6 +50,9 @@ class Product(BaseModel):
         price_curr (float):
             Current selling price. If not provided, matches the full price
             if the latter is provided or is set to 0 otherwise.
+        info (str):
+            Additional information about the product. Defaults to an empty
+            string value.
         pic_url (str):
             URL of the product image. Default URL is used if not provided.
         location_id (int):
@@ -52,11 +63,12 @@ class Product(BaseModel):
             Timestamp of the product instance initialization.
             Defaults to the time of instantiation.
     """
+
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
         validate_assignment=True,
-        )
+    )
 
     id_: int = Field(serialization_alias='id', validation_alias='id')
     """Unique identifier or the product."""
@@ -74,6 +86,8 @@ class Product(BaseModel):
     """Full price of the product."""
     price_curr: NonNegativeFloat = Field(default=0.0)
     """Current selling price of the product."""
+    info: str = Field(default='')
+    """Additional information about the product."""
     pic_url: str = Field(default=DEFAULT_PIC_URL)
     """URL of the product image."""
     location_id: int = Field(default=0)
@@ -83,7 +97,9 @@ class Product(BaseModel):
     timestamp: float = Field(default_factory=time.time)
     """Timestamp of the product creation."""
 
-    def model_post_init(self, __context) -> None:
+    def model_post_init(
+        self, __context: object
+    ) -> None:  # annotation is for ruff and mypy
         fields_set = self.model_fields_set
         if 'price_full' not in fields_set and 'price_curr' not in fields_set:
             self.price_full = 0.0
@@ -141,7 +157,7 @@ class Product(BaseModel):
         """A product is considered available if its quantity equals one."""
         return self.quantity == 1
 
-    def is_newer_than(self, other: Product) -> bool:
+    def is_newer_than(self, other: 'Product') -> bool:
         """Determine if this product is newer that the given one by
         comparing their creation timestamps.
 
@@ -154,12 +170,20 @@ class Product(BaseModel):
         """
         return self.timestamp > other.timestamp
 
-    def diff(self, other: Product, **kwargs) -> dict[str, DiffValueTuple]:
-        """Compare this product with another to identify differences,
-        excluding the creation timestamps.
+    def diff(
+        self, other: 'Product', **kwargs: Any
+    ) -> Dict[str, 'DiffValueTuple']:
+        """Compare this product with another to identify differences.
+
+        This method compares the fields of this product with the fields of
+        another product instance to identify differences between them.
+        `model_dump` method is used to extract the data from the product
+        instances.
 
         Args:
             other (Product): The product to compare against.
+            **kwargs: Additional keyword arguments to pass to the `model_dump`
+                method calls of the product instances.
 
         Returns:
             dict[str, DiffValue]: A dictionary with keys as attribute names and
@@ -181,7 +205,7 @@ class Product(BaseModel):
                 diff[attr] = DiffValueTuple(None, value)
         return diff
 
-    def compare_quantity(self, new: Product) -> ProductQuantityUpdateInfo:
+    def compare_quantity(self, new: 'Product') -> 'ProductQuantityUpdateInfo':
         """Compare the stock quantity of this product instance with the one of
         a newer instance of the same product.
 
@@ -216,13 +240,10 @@ class Product(BaseModel):
             depleted = False
             restocked = False
         return ProductQuantityUpdateInfo(
-            decrease,
-            increase,
-            depleted,
-            restocked
-            )
+            decrease, increase, depleted, restocked
+        )
 
-    def compare_price(self, new: Product) -> ProductPriceUpdateInfo:
+    def compare_price(self, new: 'Product') -> 'ProductPriceUpdateInfo':
         """Compare the pricing details of this product instance with those of
         a newer instance of the same product.
 
@@ -280,14 +301,15 @@ class Product(BaseModel):
             discount_rate_increase,
             sale_started=(not self.is_on_sale and new.is_on_sale),
             sale_ended=(self.is_on_sale and not new.is_on_sale),
-            )
+        )
 
 
-class DiffValueTuple(typing.NamedTuple):
+class DiffValueTuple(NamedTuple):
     """Holds differing attribute values between two products."""
-    value_self: typing.Any
+
+    value_self: Any
     """Value of the attribute in the first product."""
-    value_other: typing.Any
+    value_other: Any
     """Value of the attribute in the second product."""
 
 
@@ -296,6 +318,7 @@ class ProductQuantityUpdateInfo:
     """Summarizes the details of stock quantity changes in a product,
     as determined by comparing two instances of this product.
     """
+
     stock_decrease: int = 0
     """Decrease in stock quantity, representing how many items
     are fewer in the new product compared to the old product.
@@ -323,6 +346,7 @@ class ProductPriceUpdateInfo:
     """Summarizes the details of pricing changes of a product,
     as determined by comparing two instances of this product.
     """
+
     price_full_decrease: float = 0.0
     """Decrease in the full price of the product, representing the difference
     between its old full price and its new full price.

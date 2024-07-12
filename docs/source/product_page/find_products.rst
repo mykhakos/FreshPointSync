@@ -1,25 +1,19 @@
-================
-Finding Products
-================
+==================================
+Finding Products on a Product Page
+==================================
 
-There are two methods available for searching for products on a ``ProductPage``
-instance: ``find_product`` and ``find_products``. The ``find_product`` method
+Products on a product page can be searched using the ``find_product`` and
+``find_products`` methods of the ``ProductPage`` class. These methods allow
+you to search for products based on their attributes, properties, and custom
+constraints.
+
+The two methods differ in the number of products they return. ``find_product``
 returns the first product that matches the specified criteria, or ``None`` if
-no product is found. The ``find_products`` method returns a list of all products
-that match the specified criteria. Both methods match products based on their
-attributes and properties as well as custom constraints.
+no product is found. ``find_products`` returns a list of all products that match
+the specified criteria.
 
-First, create a new ``ProductPage`` instance for a specific location and update
-the product listings. Learn more about creating ``ProductPage`` instances in
-the :doc:`init_product_page` example.
-
-.. code-block:: python
-
-    from freshpointsync import ProductPage
-
-    async def main():
-        async with ProductPage(location_id=296) as page:
-            await page.update_silently()
+Assuming we have a ``ProductPage`` instance named ``page``, let's explore how
+to search for products using the ``find_product`` and ``find_products`` methods.
 
 Searching using Attributes and Properties
 -----------------------------------------
@@ -56,62 +50,8 @@ available and prints the number of products found.
     For example, searching for ``name='harboe cola'`` or ``name='Cola'``
     will not match a product named "Harboe Cola".
 
-Searching using Custom Constraints
-----------------------------------
-
-In case your search query is more complex, you can pass a ``callable`` object
-to the ``constraint`` parameter of any of the search methods. The callable
-object should accept a single argument, which is a ``Product`` instance, and
-return a boolean value indicating whether the product matches the criteria.
-
-One common use case is to search for a product based on a part of its name:
-
-.. code-block:: python
-
-    products = page.find_products(
-        constraint=lambda product: 'cola' in product.name_lowercase_ascii
-    )
-    print(f'{len(products)} products contain "cola" in their name.')
-
-This code implements a ``lambda`` function that searches for all products that
-contain the word "cola" in their name and prints the number of products found.
-Such an approach allows for a case-insensitive search that ignores diacritics
-and matches partial words.
-
-.. tip::
-
-    While using ``lambda`` functions is a common approach, you can also define
-    a regular function and pass it to the ``constraint`` parameter. The only
-    requirement is that the function should accept a single argument and return
-    a boolean value.
-
-Combining Multiple Criteria
----------------------------
-
-It is possible to combine multiple criteria in a single search query. Study the
-following code snippet:
-
-.. code-block:: python
-
-    products = page.find_products(
-        constraint=lambda product: (
-            'sendvice' in product.category_lowercase_ascii and
-            product.is_available and
-            product.price_curr < 100
-        )
-    )
-    if products:
-        print('Sendvices available for less than 100 CZK:')
-        for product in products:
-            print(f'- {product.name} ({product.price_curr} CZK)')
-    else:
-        print('No sendvices available for less than 100 CZK.')
-
-In the example above, the code searches for products, the category of which
-contains the word "sendvice", that are available, and cost less than 100 CZK.
-
 Complete Example
-----------------
+~~~~~~~~~~~~~~~~
 
 .. code-block:: python
 
@@ -131,10 +71,56 @@ Complete Example
             desserts = page.find_products(category='Dezerty', is_available=True)
             print(f'{len(desserts)} desserts are currently available.')
 
-            products = page.find_products(
-                constraint=lambda product: 'cola' in product.name_lowercase_ascii
-            )
-            print(f'{len(products)} products contain "cola" in their name.')
+    if __name__ == '__main__':
+        asyncio.run(main())
+
+Searching using Custom Constraints
+----------------------------------
+
+In case your search query is more complex, you can pass a callable object to
+the ``constraint`` parameter of any of the search methods. The callable
+object should accept a single argument, which is a ``Product`` instance, and
+return a boolean value indicating whether the product matches the criteria.
+
+.. code-block:: python
+
+    products = page.find_products(
+        constraint=lambda product: (
+            'sendvice' in product.category_lowercase_ascii and
+            product.is_available and
+            product.price_curr < 100
+        )
+    )
+    if products:
+        print('Sendvices available for less than 100 CZK:')
+        for product in products:
+            print(f'- {product.name} ({product.price_curr} CZK)')
+    else:
+        print('No sendvices available for less than 100 CZK.')
+
+In the example above, a ``lambda`` function is used to search for all products,
+the category of which contains the word "sendvice" (the matching is case-
+insensitive and ignores diacritics), that are available, and cost less than
+100 CZK.
+
+.. tip::
+
+    While using ``lambda`` functions is a common approach, you can also define
+    a regular function and pass it to the ``constraint`` parameter. The only
+    requirement is that the function should accept a single argument and return
+    a boolean value.
+
+Complete Example
+~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+    import asyncio
+    from freshpointsync import ProductPage
+
+    async def main():
+        async with ProductPage(location_id=296) as page:
+            await page.update_silently()
 
             products = page.find_products(
                 constraint=lambda product: (
@@ -148,7 +134,74 @@ Complete Example
                 for product in products:
                     print(f'- {product.name} ({product.price_curr} CZK)')
             else:
-                print('No sendvices available for less than 100 CZK.')
+                print('No sendvices are available for less than 100 CZK.')
 
     if __name__ == '__main__':
         asyncio.run(main())
+
+Case Study: Creating a Simple REPL Application
+----------------------------------------------
+
+Let's create a simple REPL application that finds a product by its name and
+prints its availability.
+
+.. code-block:: python
+
+    import asyncio
+    import time
+    from freshpointsync import ProductPage
+
+    LOCATION_ID = 296
+
+    def print_product_info(page: ProductPage, product_name: str) -> None:
+        product = page.find_product(
+            constraint=lambda p: product_name.casefold() in p.name_lowercase_ascii
+            )  # case-insensitive search for a partial match
+        if product:
+            print(f'Product "{product.name}" quantity: {product.quantity} pcs.')
+        else:
+            print(f'Product "{product_name}" not found on the page.')
+
+    def get_user_input() -> str:
+        return input('Enter product name (or "exit" to quit): ')
+
+    async def prompt_forever(page: ProductPage, max_update_interval: float) -> None:
+        await page.update_silently()
+        timer = time.time()
+        while True:
+            product_name = get_user_input()
+            if product_name == 'exit':
+                break
+            if time.time() - timer > max_update_interval:
+                await page.update_silently()
+                timer = time.time()
+            print_product_info(page, product_name)
+
+    async def main() -> None:
+        page = ProductPage(location_id=LOCATION_ID)
+        try:
+            await page.start_session()
+        except Exception as e:
+            print(f'An error occurred while starting the session: {e}')
+            return
+        try:
+            await prompt_forever(page, max_update_interval=10.0)
+        except EOFError:
+            print()  # print '\n' to handle Ctrl+C with no input (EOF)
+        except Exception as e:
+            print(f'An unexpected error occurred: {e}')
+        finally:
+            print('Exiting...')
+            await page.close_session()
+
+    if __name__ == '__main__':
+        try:
+            asyncio.run(main())
+        except KeyboardInterrupt:
+            pass
+
+In the example above, a ``ProductPage`` instance is created in the ``main``
+function. The session is started and the initial data is fetched. The script
+then enters an infinite loop under a ``try-finally`` block. The loop prompts
+the user for a product name and prints the product quantity. The session is
+closed when the user exits the loop.

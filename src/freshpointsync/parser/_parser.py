@@ -2,8 +2,17 @@ import hashlib
 import html
 import logging
 import re
-import typing
 from functools import cached_property
+from typing import (
+    Any,
+    Callable,
+    Iterable,
+    List,
+    Optional,
+    Tuple,
+    TypeVar,
+    cast,
+)
 
 import bs4
 from unidecode import unidecode
@@ -42,7 +51,7 @@ def hash_text(text: str) -> str:
     return hashlib.sha256(text.encode('utf-8')).hexdigest()
 
 
-T = typing.TypeVar('T')
+T = TypeVar('T')
 
 
 class ProductHTMLParser:
@@ -137,23 +146,25 @@ class ProductHTMLParser:
         return cls._get_attr_value('data-glutenfree', product_data) == '1'
 
     @classmethod
+    def find_info(cls, product_data: bs4.Tag) -> str:
+        """Extract the product info from the given product data."""
+        text = html.unescape(cls._get_attr_value('data-info', product_data))
+        lines = []
+        for line in text.split('\n'):
+            line_stripped = line.rstrip()
+            if line_stripped.endswith('<br />'):
+                line_stripped = line_stripped[:-6]
+            line_stripped = line_stripped.strip()
+            if line_stripped:
+                lines.append(line_stripped)
+        return '\n'.join(lines)
+
+    @classmethod
     def find_pic_url(cls, product_data: bs4.Tag) -> str:
         """Extract the URL of the product's picture
         from the given product data.
         """
         return cls._get_attr_value('data-photourl', product_data)
-
-    @staticmethod
-    def has_text_chars(text: str) -> bool:
-        """Check if the given text contains any characters.
-
-        Args:
-            text (str): The text to check.
-
-        Returns:
-            bool: True if the text is empty, False otherwise.
-        """
-        return bool(text)
 
     @classmethod
     def find_category(cls, product_data: bs4.Tag) -> str:
@@ -167,7 +178,7 @@ class ProductHTMLParser:
         # 'string=bool' filters out empty strings and None values
         category = product_data.parent.find_all(name='h2', string=bool)
         try:
-            return cls._extract_single_tag(category).text.strip()
+            return cast(str, cls._extract_single_tag(category).text.strip())
         except Exception as exp:
             raise ValueError(
                 f'Unable to extract product category name for product '
@@ -191,12 +202,12 @@ class ProductHTMLParser:
 
     @classmethod
     def _run_converter(
-        cls, converter: typing.Callable[[], T], product_data: bs4.Tag
+        cls, converter: Callable[[], T], product_data: bs4.Tag
     ) -> T:
         """Run the given converter function and return the converted value.
 
         Args:
-            converter (typing.Callable[[], T]): The converter function
+            converter (Callable[[], T]): The converter function
                 to be executed.
             product_data (bs4.Tag): The product data to be passed to
                 the converter function.
@@ -243,7 +254,7 @@ class ProductHTMLParser:
         )
 
     @classmethod
-    def find_price(cls, product_data: bs4.Tag) -> tuple[float, float]:
+    def find_price(cls, product_data: bs4.Tag) -> Tuple[float, float]:
         """Extract the full and current price of the product
         from the given product data.
         """
@@ -351,18 +362,18 @@ class ProductPageHTMLParser:
                 location_name = title_text.split('|')[0].strip()
             except Exception as e:
                 raise ValueError('Unable to parse location name.') from e
-            return location_name
+            return cast(str, location_name)
         raise ValueError(
             'Unable to parse location name (<title/> tag  was not found).'
         )
 
     @cached_property
-    def products(self) -> tuple[Product, ...]:
+    def products(self) -> Tuple[Product, ...]:
         """A tuple of `Product` instances parsed from the page HTML."""
         return self.find_products()
 
     def _find_product_data(
-        self, name: typing.Optional[str], id_: typing.Optional[int]
+        self, name: Optional[str], id_: Optional[int]
     ) -> bs4.ResultSet:
         """A helper method to find raw HTML data for products matching
         the specified name or ID. Can filter products by both attributes
@@ -418,6 +429,7 @@ class ProductPageHTMLParser:
             quantity=ProductHTMLParser.find_quantity(product_data),
             price_curr=price_curr,
             price_full=price_full,
+            info=ProductHTMLParser.find_info(product_data),
             pic_url=ProductHTMLParser.find_pic_url(product_data),
             location_id=self.page_id,
             location=self.location_name,
@@ -425,8 +437,8 @@ class ProductPageHTMLParser:
 
     def find_product(
         self,
-        name: typing.Optional[str] = None,
-        id_: typing.Optional[int] = None,
+        name: Optional[str] = None,
+        id_: Optional[int] = None,
     ) -> Product:
         """Find a single product based on the specified name and/or ID.
 
@@ -463,9 +475,7 @@ class ProductPageHTMLParser:
             )
         return self._parse_product_data(product_data[0])
 
-    def find_products(
-        self, name: typing.Optional[str] = None
-    ) -> tuple[Product, ...]:
+    def find_products(self, name: Optional[str] = None) -> Tuple[Product, ...]:
         """Find a list of products based on the specified name. If the name
         is not specified, all products on the page are returned.
 
@@ -494,8 +504,8 @@ class ProductFinder:
     def product_matches(
         cls,
         product: Product,
-        constraint: typing.Optional[typing.Callable[[Product], bool]] = None,
-        **attributes: typing.Any,
+        constraint: Optional[Callable[[Product], bool]] = None,
+        **attributes: Any,
     ) -> bool:
         """Check if a product matches the given attributes and an optional
         constraint.
@@ -525,10 +535,10 @@ class ProductFinder:
     @classmethod
     def find_product(
         cls,
-        products: typing.Iterable[Product],
-        constraint: typing.Optional[typing.Callable[[Product], bool]] = None,
-        **attributes: typing.Any,
-    ) -> typing.Optional[Product]:
+        products: Iterable[Product],
+        constraint: Optional[Callable[[Product], bool]] = None,
+        **attributes: Any,
+    ) -> Optional[Product]:
         """Find a single product in an iterable of products that matches
         the given attributes and an optional constraint.
 
@@ -557,10 +567,10 @@ class ProductFinder:
     @classmethod
     def find_products(
         cls,
-        products: typing.Iterable[Product],
-        constraint: typing.Optional[typing.Callable[[Product], bool]] = None,
-        **attributes: typing.Any,
-    ) -> list[Product]:
+        products: Iterable[Product],
+        constraint: Optional[Callable[[Product], bool]] = None,
+        **attributes: Any,
+    ) -> List[Product]:
         """Find all products in an iterable of products that match
         the given attributes and an optional constraint.
 

@@ -1,15 +1,16 @@
 import asyncio
-import aiohttp
-import certifi
 import logging
 import ssl
+from typing import Optional, Tuple, Type, TypeVar, Union
 
+import aiohttp
+import certifi
 
-from typing import Any, Optional, Union
-
-
-logger = logging.getLogger("freshpointsync.client")
+logger = logging.getLogger('freshpointsync.client')
 """Logger for the `freshpointsync.client` module."""
+
+
+TClient = TypeVar('TClient', bound='ProductDataFetchClient')
 
 
 class ProductDataFetchClient:
@@ -19,25 +20,27 @@ class ProductDataFetchClient:
     This class wraps an `aiohttp.ClientSession` object and provides additional
     features like retries, timeouts, logging, and comprehensive error handling.
     """
-    BASE_URL = "https://my.freshpoint.cz"
+
+    BASE_URL = 'https://my.freshpoint.cz'
     """The base URL of the FreshPoint.cz website."""
 
-    def __init__(
-        self,
-        timeout: Optional[Union[aiohttp.ClientTimeout, int, float]] = None,
-        max_retries: int = 5
-    ) -> None:
-        self._timeout = self._check_client_timeout(timeout)
-        self._max_retries = self._check_max_retries(max_retries)
+    def __init__(self) -> None:
+        self._timeout = self._check_timeout(timeout=None)
+        self._max_retries = self._check_max_retries(max_retries=5)
         self._client_session: Optional[aiohttp.ClientSession] = None
         self._ssl_context: Optional[ssl.SSLContext] = None
 
-    async def __aenter__(self):
+    async def __aenter__(self: TClient) -> TClient:
         """Asynchronous context manager entry."""
         await self.start_session()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_value: Optional[BaseException],
+        traceback: Optional[object],
+    ) -> None:
         """Asynchronous context manager exit."""
         await self.close_session()
 
@@ -56,62 +59,35 @@ class ProductDataFetchClient:
         """
         return f'{cls.BASE_URL}/device/product-list/{location_id}'
 
-    @property
-    def session(self) -> Optional[aiohttp.ClientSession]:
-        """The `aiohttp` client session object used for fetching data."""
-        return self._client_session
-
-    @property
-    def is_session_closed(self) -> bool:
-        """Check if the client session is closed.
-
-        Returns:
-            bool: True if the client session is closed, False otherwise.
-        """
-        if not self._client_session:
-            return True
-        return self._client_session.closed
-
-    async def set_session(self, session: aiohttp.ClientSession) -> None:
-        """Set the client session object. If the previous session
-        is not closed, it is closed before setting the new one.
-
-        Args:
-            session (aiohttp.ClientSession): The client session to set.
-        """
-        if not self.is_session_closed:
-            await self.close_session()
-        self._client_session = session
-
-    @property
-    def timeout(self) -> aiohttp.ClientTimeout:
-        """Client request timeout."""
-        return self._timeout
-
     @staticmethod
-    def _check_client_timeout(timeout: Any) -> aiohttp.ClientTimeout:
-        """Check and validate the client timeout value.
+    def _check_timeout(timeout: object) -> aiohttp.ClientTimeout:
+        """Validate the given timeout value and convert it to an
+        `aiohttp.ClientTimeout` object.
 
         Args:
             timeout (Any): The timeout value to be checked.
 
         Returns:
-            aiohttp.ClientTimeout: The validated client timeout object.
+            aiohttp.ClientTimeout: The validated client timeout object. If the
+                timeout value is None, the default `aiohttp.ClientTimeout`
+                object is returned. If the timeout value is already an instance
+                of `aiohttp.ClientTimeout`, it is returned as is.
 
         Raises:
-            ValueError: If the timeout value is negative or invalid.
+            ValueError: If the timeout value is invalid.
         """
         if timeout is None:
             return aiohttp.ClientTimeout()
+        if isinstance(timeout, (int, float)):
+            return aiohttp.ClientTimeout(total=float(timeout))
         if isinstance(timeout, aiohttp.ClientTimeout):
             return timeout
-        try:
-            timeout = float(timeout)
-            if timeout < 0:
-                raise ValueError("Timeout cannot be negative.")
-            return aiohttp.ClientTimeout(total=timeout)
-        except ValueError as err:
-            raise ValueError(f'Invalid timeout argument "{timeout}".') from err
+        raise ValueError(f'Invalid timeout argument "{timeout}".')
+
+    @property
+    def timeout(self) -> aiohttp.ClientTimeout:
+        """Client request timeout."""
+        return self._timeout
 
     def set_timeout(
         self, timeout: Optional[Union[aiohttp.ClientTimeout, int, float]]
@@ -121,38 +97,37 @@ class ProductDataFetchClient:
         Args:
             timeout (Optional[Union[aiohttp.ClientTimeout, int, float]]):
                 The timeout value. It can be an `aiohttp.ClientTimeout` object,
-                an integer or a float representing the total timeout in
-                seconds, or None for the default aiohttp client timeout.
+                an integer or a float representing the total timeout in seconds,
+                or None for the default `aiohttp.ClientTimeout` timeout.
 
         Raises:
             ValueError: If the timeout value is negative or invalid.
         """
-        self._timeout = self._check_client_timeout(timeout)
-
-    @property
-    def max_retries(self) -> int:
-        """The maximum number of retries for fetching data."""
-        return self._max_retries
+        self._timeout = self._check_timeout(timeout)
 
     @staticmethod
-    def _check_max_retries(max_retries: Any) -> int:
+    def _check_max_retries(max_retries: object) -> int:
         """Check if the given max_retries value is valid.
 
         Args:
             max_retries (Any): The number of max retries.
 
         Returns:
-            int: The validated max_retries value.
+            int: The validated value.
 
         Raises:
-            TypeError: If the max_retries value is not an integer.
-            ValueError: If the max_retries value is less than 1.
+            ValueError: If the value is not an integer or is less than 1.
         """
         if not isinstance(max_retries, int):
-            raise TypeError("The number of max retries must be an integer.")
-        if max_retries < 1:
-            raise ValueError("The number of max retries must be positive.")
+            raise ValueError('The number of max retries must be an integer.')
+        if max_retries < 0:
+            raise ValueError('The number of max retries cannot be negative.')
         return max_retries
+
+    @property
+    def max_retries(self) -> int:
+        """The maximum number of retries for fetching data."""
+        return self._max_retries
 
     def set_max_retries(self, max_retries: int) -> None:
         """Set the maximum number of retries for the fetching data.
@@ -166,19 +141,45 @@ class ProductDataFetchClient:
         """
         self._max_retries = self._check_max_retries(max_retries)
 
+    @property
+    def session(self) -> Optional[aiohttp.ClientSession]:
+        """The `aiohttp.ClientSession` object used for fetching data."""
+        return self._client_session
+
+    @property
+    def is_session_closed(self) -> bool:
+        """Check if the client session is closed.
+
+        Returns:
+            bool: True if the client session is closed, False otherwise.
+        """
+        return not self._client_session or self._client_session.closed
+
+    async def set_session(self, session: aiohttp.ClientSession) -> None:
+        """Set the client session object. If the previous session
+        is not closed, it is closed before setting the new one.
+
+        Args:
+            session (aiohttp.ClientSession): The client session to set.
+        """
+        if not self.is_session_closed:
+            await self.close_session()
+        self._client_session = session
+
     async def start_session(self) -> None:
         """Start an aiohttp client session if one is not already started."""
         if self.is_session_closed:
             logger.info('Starting new client session for "%s".', self.BASE_URL)
-            session = aiohttp.ClientSession(base_url=self.BASE_URL)
-            self._client_session = session
+            self._client_session = aiohttp.ClientSession(
+                base_url=self.BASE_URL
+            )
             logger.debug(
                 'Successfully started client session for "%s".', self.BASE_URL
-                )
+            )
         else:
             logger.debug(
                 'Client session for "%s" is already started.', self.BASE_URL
-                )
+            )
         if self._ssl_context is None:
             logger.debug('Creating SSL context for "%s".', self.BASE_URL)
             context = ssl.create_default_context(cafile=certifi.where())
@@ -186,23 +187,25 @@ class ProductDataFetchClient:
 
     async def close_session(self) -> None:
         """Close the aiohttp client session if one is open."""
-        if self.is_session_closed:
-            logger.debug(
-                'Client session for "%s" is already closed.', self.BASE_URL
-                )
-        else:
+        if self._client_session:
             logger.info('Closing client session for "%s".', self.BASE_URL)
-            await self._client_session.close()  # type: ignore
+            if not self._client_session.closed:
+                await self._client_session.close()
+            self._client_session = None
             logger.debug(
                 'Successfully closed client session for "%s".', self.BASE_URL
-                )
+            )
+        else:
+            logger.debug(
+                'Client session for "%s" is already closed.', self.BASE_URL
+            )
         if self._ssl_context is not None:
             logger.debug('Clearing SSL context for "%s".', self.BASE_URL)
             self._ssl_context = None
 
     def _check_fetch_args(
-        self, location_id: Any, timeout: Any, max_retries: Any
-    ) -> tuple[aiohttp.ClientSession, str, aiohttp.ClientTimeout, int]:
+        self, location_id: object, timeout: object, max_retries: object
+    ) -> Tuple[aiohttp.ClientSession, str, aiohttp.ClientTimeout, int]:
         """Check and validate the arguments for fetching data. Note that this
         method may raise exceptions via the checks for timeout and max_retries.
 
@@ -223,7 +226,7 @@ class ProductDataFetchClient:
         if timeout is None:
             timeout = self._timeout
         else:
-            timeout = self._check_client_timeout(timeout)
+            timeout = self._check_timeout(timeout)
         if max_retries is None:
             max_retries = self._max_retries
         else:
@@ -236,7 +239,7 @@ class ProductDataFetchClient:
         session: aiohttp.ClientSession,
         ssl_context: ssl.SSLContext,
         relative_url: str,
-        timeout: aiohttp.ClientTimeout
+        timeout: aiohttp.ClientTimeout,
     ) -> Optional[str]:
         """Fetch data from the specified URL using the provided session and
         timeout.
@@ -255,36 +258,42 @@ class ProductDataFetchClient:
         """
         try:
             async with session.get(
-                relative_url, ssl_context=ssl_context, timeout=timeout
+                relative_url, ssl=ssl_context, timeout=timeout
             ) as response:
                 if response.status == 200:
                     logger.debug(
                         'Successfully fetched data from "%s"', response.url
-                        )
+                    )
                     return await response.text()
                 else:
                     logger.error(
                         'Error occurred while fetching data from "%s": '
-                        'HTTP Status %s', response.url, response.status
-                        )
+                        'HTTP Status %s',
+                        response.url,
+                        response.status,
+                    )
         except asyncio.TimeoutError:
             logger.warning(
                 'Timeout occurred when fetching data from "%s%s"',
-                self.BASE_URL, relative_url
-                )
+                self.BASE_URL,
+                relative_url,
+            )
         except Exception as exc:
             exc_type = exc.__class__.__name__
             logger.error(
                 'Exception "%s" occurred while fetching data from "%s%s": %s',
-                exc_type, self.BASE_URL, relative_url, str(exc)
-                )
+                exc_type,
+                self.BASE_URL,
+                relative_url,
+                str(exc),
+            )
         return None
 
     async def fetch(
         self,
         location_id: Union[int, str],
         timeout: Optional[Union[aiohttp.ClientTimeout, int, float]] = None,
-        max_retries: Optional[int] = None
+        max_retries: Optional[int] = None,
     ) -> Optional[str]:
         """Fetch HTML data from a FreshPoint.cz web page.
 
@@ -306,16 +315,19 @@ class ProductDataFetchClient:
         while attempt < max_retries:
             logger.info(
                 'Fetching data from "%s%s" (attempt %s of %s)',
-                self.BASE_URL, relative_url, attempt + 1, max_retries
-                )
+                self.BASE_URL,
+                relative_url,
+                attempt + 1,
+                max_retries,
+            )
             text = await self._fetch_once(
                 session, self._ssl_context, relative_url, timeout
-                )
+            )
             if text is not None:
                 return text
             attempt += 1
             if attempt < max_retries:
-                wait_time: int = 2 ** attempt  # exponential backoff
+                wait_time: int = 2**attempt  # exponential backoff
                 logger.debug('Retrying in %i seconds...', wait_time)
                 await asyncio.sleep(wait_time)
         return None

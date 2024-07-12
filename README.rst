@@ -35,7 +35,7 @@ with.
 
 📜 **Comprehensive Documentation**. FreshPointSync offers extensive in-code
 documentation as well as an official user guide and tutorials hosted on the
-`Read the Docs <https://freshpointsync.readthedocs.io/en/latest/>`__ platform.
+`Read the Docs <https://freshpointsync.readthedocs.io>`__ platform.
 
 Installation
 ------------
@@ -70,6 +70,24 @@ commands:
 .. code-block:: console
 
    $ pip install freshpointsync[tests]
+
+- For linting the code:
+
+.. code-block:: console
+
+   $ pip install freshpointsync[lint]
+
+- For building the package:
+
+.. code-block:: console
+
+   $ pip install freshpointsync[build]
+
+- For all development dependencies (combines all the above options):
+
+.. code-block:: console
+
+   $ pip install freshpointsync[dev]
 
 Minimal Example
 ---------------

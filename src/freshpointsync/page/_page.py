@@ -5,7 +5,9 @@ from functools import cached_property
 from typing import (
     Any,
     Callable,
+    Dict,
     Iterable,
+    List,
     NamedTuple,
     Optional,
     Type,
@@ -59,8 +61,8 @@ class ProductPageData(BaseModel):
     """ID of the product location."""
     html_hash: str = Field(default='')
     """SHA-256 hash of the HTML contents of the product page."""
-    products: dict[int, Product] = Field(default={}, repr=False, frozen=True)
-    """Dictionary of products' data on the page."""
+    products: Dict[int, Product] = Field(default={}, repr=False, frozen=True)
+    """Dictionary of products' IDs and data models on the page."""
 
     @cached_property
     def url(self) -> str:
@@ -83,12 +85,12 @@ class ProductPageData(BaseModel):
         return normalize_text(self.location)
 
     @property
-    def product_names(self) -> list[str]:
+    def product_names(self) -> List[str]:
         """List of string product names on the page."""
         return [p.name for p in self.products.values() if p.name]
 
     @property
-    def product_categories(self) -> list[str]:
+    def product_categories(self) -> List[str]:
         """List of string product categories on the page."""
         categories = []
         for p in self.products.values():
@@ -192,7 +194,7 @@ class ProductPage:
         return self._data  # copy is not necessary because fields are frozen
 
     @property
-    def context(self) -> dict[Any, Any]:
+    def context(self) -> Dict[Any, Any]:
         """Product page context data."""
         return self._publisher.context
 
@@ -339,7 +341,7 @@ class ProductPage:
         return FetchInfo(contents, contents_hash, is_updated)
 
     @staticmethod
-    def _parse_contents_blocking(contents: str) -> list[Product]:
+    def _parse_contents_blocking(contents: str) -> List[Product]:
         """Blocking synchronous function to parse the contents of the product
         page and extract product data.
 
@@ -351,7 +353,7 @@ class ProductPage:
         """
         return [p for p in ProductPageHTMLParser(contents).products]
 
-    async def _parse_contents(self, contents: str) -> list[Product]:
+    async def _parse_contents(self, contents: str) -> List[Product]:
         """Asynchronously parse the contents of the product page and extract
         product data. This method is a wrapper around the blocking synchronous
         parsing function that run in a way that does not block the event loop.
@@ -371,7 +373,7 @@ class ProductPage:
             return []
         return products or []
 
-    async def fetch(self) -> list[Product]:
+    async def fetch(self) -> List[Product]:
         """Fetch the contents of the product page and extract the product data.
         This method does not update the internal state of the page, nor does it
         trigger any event handlers.
@@ -587,7 +589,7 @@ class ProductPage:
         self,
         constraint: Optional[Callable[[Product], bool]] = None,
         **attributes: Any,
-    ) -> list[Product]:
+    ) -> List[Product]:
         """Find products on the page that match the specified attributes.
 
         Attributes are specific product state information and should match
@@ -624,10 +626,10 @@ class ProductPageHubData(BaseModel):
         populate_by_name=True,
     )
 
-    pages: dict[int, ProductPageData] = Field(
+    pages: Dict[int, ProductPageData] = Field(
         default={}, repr=False, frozen=True
     )
-    """Dictionary of product page data models."""
+    """Dictionary of product page IDs and data models."""
 
 
 TProductPageHub = TypeVar('TProductPageHub', bound='ProductPageHub')
@@ -885,7 +887,7 @@ class ProductPageHub:
                         handler_data.exec_params.done_callback,
                     )
         # add common context
-        for key, value in self._publisher.context:
+        for key, value in self._publisher.context.items():
             page.context[key] = value
         # add page contents (optional)
         if update_contents:
@@ -904,7 +906,7 @@ class ProductPageHub:
         self._pages.pop(location_id)
 
     @property
-    def pages(self) -> dict[int, ProductPage]:
+    def pages(self) -> Dict[int, ProductPage]:
         """Dictionary of product page objects with location IDs as keys."""
         return self._pages.copy()
 
@@ -1011,7 +1013,7 @@ class ProductPageHub:
         for loc in inexistent_locations:
             self._unregister_page(loc)
 
-    async def _fetch_contents(self) -> dict[int, FetchInfo]:
+    async def _fetch_contents(self) -> Dict[int, FetchInfo]:
         """Fetch the contents of all product pages in the hub.
 
         Returns:
@@ -1026,8 +1028,8 @@ class ProductPageHub:
 
     @staticmethod
     def _filter_updated_contents(
-        pages_fetch_info: dict[int, FetchInfo],
-    ) -> dict[int, FetchInfo]:
+        pages_fetch_info: Dict[int, FetchInfo],
+    ) -> Dict[int, FetchInfo]:
         """Filter the fetched contents to only include pages the contents of
         which have been updated.
 
@@ -1046,8 +1048,8 @@ class ProductPageHub:
         }
 
     async def _parse_contents(
-        self, pages_fetch_info: dict[int, FetchInfo]
-    ) -> dict[int, list[Product]]:
+        self, pages_fetch_info: Dict[int, FetchInfo]
+    ) -> Dict[int, List[Product]]:
         """Parse the contents of all product pages in the hub and extract
         product data.
 

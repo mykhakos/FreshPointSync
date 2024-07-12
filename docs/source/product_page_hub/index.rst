@@ -1,13 +1,14 @@
-Product Page Hub
-================
+Using Product Page Hubs
+=======================
 
-The ``ProductPageHub`` class is designed to provide a central location for
-managing several ``ProductPage`` instances at once.
-
-.. todo::
-
-   Add more information about the ``ProductPageHub``.
+The ``ProductPageHub`` class acts as a high-level manager for interacting with
+multiple product pages simultaneously. While each page retains its own state and
+can be accessed individually, all pages share a single client session and
+a common task runner for efficient data updates.
 
 .. toctree::
-   :maxdepth: 3
+   :maxdepth: 2
    :caption: Contents:
+
+   init_hub
+   update_and_subscribe

@@ -1,5 +1,4 @@
 import pytest
-
 from freshpointsync.update import HandlerValidator
 
 
@@ -24,50 +23,49 @@ def sync_handler_invalid():
 
 
 class AsyncCallableClassValid:
-    """
-    Valid asynchronous callable class,
+    """Valid asynchronous callable class,
     (implements async `__call__` method, expects one parameter).
     """
+
     async def __call__(self, arg):
         pass
 
 
 class AsyncCallableClassInvalid:
-    """
-    Inalid asynchronous callable class,
+    """Inalid asynchronous callable class,
     (implements async `__call__` method, expects no parameters).
     """
+
     async def __call__(self):
         pass
 
 
 class SyncCallableClassValid:
-    """
-    Valid synchronous callable class,
+    """Valid synchronous callable class,
     (implements sync `__call__` method, expects one parameter).
     """
+
     def __call__(self, arg):
         pass
 
 
 class SyncCallableClassInvalid:
-    """
-    Inalid synchronous callable class,
+    """Inalid synchronous callable class,
     (implements sync `__call__` method, expects no parameters).
     """
+
     def __call__(self):
         pass
 
 
 class NotCallableClass:
-    """
-    Invalid class (does not implement `__call__` method).
-    """
+    """Invalid class (does not implement `__call__` method)."""
+
     pass
 
 
 @pytest.mark.parametrize(
-    "handler, expected",
+    'handler, expected',
     [
         (async_handler_valid, True),
         (async_handler_invalid, False),
@@ -78,7 +76,7 @@ class NotCallableClass:
         (SyncCallableClassValid(), False),
         (SyncCallableClassInvalid(), False),
         (NotCallableClass(), False),
-        ("not a callable", False)
+        ('not a callable', False),
     ],
 )
 def test_is_valid_async_handler(handler, expected):
@@ -86,7 +84,7 @@ def test_is_valid_async_handler(handler, expected):
 
 
 @pytest.mark.parametrize(
-    "handler, expected",
+    'handler, expected',
     [
         (async_handler_valid, False),
         (async_handler_invalid, False),
@@ -97,7 +95,7 @@ def test_is_valid_async_handler(handler, expected):
         (SyncCallableClassValid(), True),
         (SyncCallableClassInvalid(), False),
         (NotCallableClass(), False),
-        ("not a callable", False)
+        ('not a callable', False),
     ],
 )
 def test_is_valid_sync_handler(handler, expected):
@@ -105,7 +103,7 @@ def test_is_valid_sync_handler(handler, expected):
 
 
 @pytest.mark.parametrize(
-    "handler, expected",
+    'handler, expected',
     [
         (async_handler_valid, True),
         (async_handler_invalid, False),
@@ -116,7 +114,7 @@ def test_is_valid_sync_handler(handler, expected):
         (SyncCallableClassValid(), True),
         (SyncCallableClassInvalid(), False),
         (NotCallableClass(), False),
-        ("not a callable", False)
+        ('not a callable', False),
     ],
 )
 def test_is_valid_handler(handler, expected):

@@ -1,18 +1,17 @@
 import pytest
-
+from freshpointsync.client import ProductDataFetchClient
 from freshpointsync.page import ProductPageData
 from freshpointsync.product import Product
-from freshpointsync.client import ProductDataFetchClient
 
 
 class TestProductPageData:
-    @pytest.fixture
-    def product_page_data(self):
+    @pytest.fixture(name='product_page_data')
+    def fixture_product_page_data(self):
         return ProductPageData(
             location_id=1,
-            html_hash="",
+            html_hash='',
             products={},
-            )
+        )
 
     def test_url(self, product_page_data):
         expected_url = ProductDataFetchClient.get_page_url(1)
@@ -23,7 +22,7 @@ class TestProductPageData:
             product_page_data.location_id = 2
 
     def test_location(self, product_page_data):
-        assert product_page_data.location == ""
+        assert not product_page_data.location
         product = Product(id_=1, location="L'Oréal Česká republika")
         product_page_data.products[1] = product
         expected_location = "L'Oréal Česká republika"

@@ -155,24 +155,26 @@ class ProductDataFetchClient:
         """
         return not self._client_session or self._client_session.closed
 
-    async def set_session(self, session: aiohttp.ClientSession) -> None:
-        """Set the client session object. If the previous session
-        is not closed, it is closed before setting the new one.
+    async def start_session(self, force: bool = False) -> None:
+        """Start a new `aiohttp` client session and create an SSL context.
+
+        If a session is already started, a new session is not created unless
+        the `force` parameter is set to `True`. If the SSL context is already
+        created, it is not recreated.
 
         Args:
-            session (aiohttp.ClientSession): The client session to set.
+            force (bool, optional): If True, forcefully close the existing
+                session and start a new one. If no session is started,
+                this parameter has no effect. Defaults to False.
         """
-        if not self.is_session_closed:
+        if not self.is_session_closed and force:
+            logger.info(
+                'Closing existing client session for "%s".', self.BASE_URL
+            )
             await self.close_session()
-        self._client_session = session
-
-    async def start_session(self) -> None:
-        """Start an aiohttp client session if one is not already started."""
         if self.is_session_closed:
             logger.info('Starting new client session for "%s".', self.BASE_URL)
-            self._client_session = aiohttp.ClientSession(
-                base_url=self.BASE_URL
-            )
+            self._client_session = aiohttp.ClientSession(base_url=self.BASE_URL)
             logger.debug(
                 'Successfully started client session for "%s".', self.BASE_URL
             )
@@ -185,8 +187,28 @@ class ProductDataFetchClient:
             context = ssl.create_default_context(cafile=certifi.where())
             self._ssl_context = context
 
+    async def set_session(self, session: aiohttp.ClientSession) -> None:
+        """Set the client session object. If the previous session
+        is not closed, it is closed before setting the new one.
+
+        Args:
+            session (aiohttp.ClientSession): The client session to set.
+        """
+        if not isinstance(session, aiohttp.ClientSession):
+            raise TypeError(
+                'The session must be an aiohttp.ClientSession object.'
+            )
+        if not self.is_session_closed:
+            await self.close_session()
+        self._client_session = session
+
     async def close_session(self) -> None:
-        """Close the aiohttp client session if one is open."""
+        """Close the `aiohttp` client session if one is open.
+
+        If the session is already closed, this method has no effect on
+        the client session object. If an SSL context has been created,
+        it is also cleared after closing the session.
+        """
         if self._client_session:
             logger.info('Closing client session for "%s".', self.BASE_URL)
             if not self._client_session.closed:
@@ -258,25 +280,34 @@ class ProductDataFetchClient:
         """
         try:
             async with session.get(
-                relative_url, ssl=ssl_context, timeout=timeout
+                relative_url,
+                ssl=ssl_context,
+                timeout=timeout,
+                allow_redirects=False,
             ) as response:
-                if response.status == 200:
-                    logger.debug(
-                        'Successfully fetched data from "%s"', response.url
-                    )
-                    return await response.text()
-                else:
-                    logger.error(
-                        'Error occurred while fetching data from "%s": '
-                        'HTTP Status %s',
-                        response.url,
-                        response.status,
-                    )
+                logger.debug(
+                    'Server response for "%s": %s %s',
+                    response.url,
+                    response.status,
+                    response.reason,
+                )
+                if response.status == 302:
+                    return ''  # inexistent page, no need to retry
+                if response.status != 200:
+                    return None  # fetch failed, should retry
+                return await response.text()
         except asyncio.TimeoutError:
             logger.warning(
-                'Timeout occurred when fetching data from "%s%s"',
+                'Timeout occurred while fetching data from "%s%s"',
                 self.BASE_URL,
                 relative_url,
+            )
+        except aiohttp.ClientConnectionError as exc:
+            logger.warning(
+                'Connection error occurred while fetching data from "%s%s": %s',
+                self.BASE_URL,
+                relative_url,
+                exc,
             )
         except Exception as exc:
             exc_type = exc.__class__.__name__
@@ -285,9 +316,9 @@ class ProductDataFetchClient:
                 exc_type,
                 self.BASE_URL,
                 relative_url,
-                str(exc),
+                exc,
             )
-        return None
+        return None  # fetch failed, should retry
 
     async def fetch(
         self,
@@ -323,6 +354,8 @@ class ProductDataFetchClient:
             text = await self._fetch_once(
                 session, self._ssl_context, relative_url, timeout
             )
+            if text == '':  # noqa: PLC1901  # inexistent page
+                return None
             if text is not None:
                 return text
             attempt += 1

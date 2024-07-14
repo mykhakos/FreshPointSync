@@ -20,7 +20,7 @@ from unidecode import unidecode
 from ..product._product import Product
 
 logger = logging.getLogger('freshpointsync.parser')
-"""Logger for the `freshpointsync.parser` module."""
+"""Logger for the `freshpointsync.parser` package."""
 
 
 def normalize_text(text: object) -> str:
@@ -415,10 +415,10 @@ class ProductPageHTMLParser:
             Product: An instance of the `Product` class
             containitng the parsed data.
         """
-        logger.debug(
-            'Parsing product data for product with attributes "id=%s"...',
-            ProductHTMLParser._find_id_safe(product_data),
-        )
+        # logger.debug(
+        #     'Parsing product data for product with attributes "id=%s"...',
+        #     ProductHTMLParser._find_id_safe(product_data),
+        # )
         price_full, price_curr = ProductHTMLParser.find_price(product_data)
         return Product(
             id_=ProductHTMLParser.find_id(product_data),
@@ -491,6 +491,20 @@ class ProductPageHTMLParser:
         product_data = self._find_product_data(name, None)
         products = (self._parse_product_data(data) for data in product_data)
         return tuple(products)
+
+
+def parse_page_contents(page_html: str) -> Tuple[Product, ...]:
+    """Parse the HTML contents of a FreshPoint.cz web page and extract
+    product information.
+
+    Args:
+        page_html (str): HTML contents of the product page.
+
+    Returns:
+        tuple[Product]: A tuple of `Product` instances parsed from the page HTML.
+    """
+    parser = ProductPageHTMLParser(page_html)
+    return parser.products
 
 
 class ProductFinder:

@@ -7,12 +7,16 @@ from ._parser import (
     ProductFinder,
     ProductPageHTMLParser,
     hash_text,
+    logger,
     normalize_text,
+    parse_page_contents,
 )
 
 __all__ = [
     'ProductFinder',
     'ProductPageHTMLParser',
     'hash_text',
+    'logger',
     'normalize_text',
+    'parse_page_contents',
 ]

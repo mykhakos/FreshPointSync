@@ -11,7 +11,6 @@ from typing import (
     Optional,
     Tuple,
     TypeVar,
-    cast,
 )
 
 import bs4
@@ -178,7 +177,7 @@ class ProductHTMLParser:
         # 'string=bool' filters out empty strings and None values
         category = product_data.parent.find_all(name='h2', string=bool)
         try:
-            return cast(str, cls._extract_single_tag(category).text.strip())
+            return cls._extract_single_tag(category).text.strip()  # type: ignore
         except Exception as exp:
             raise ValueError(
                 f'Unable to extract product category name for product '
@@ -362,7 +361,7 @@ class ProductPageHTMLParser:
                 location_name = title_text.split('|')[0].strip()
             except Exception as e:
                 raise ValueError('Unable to parse location name.') from e
-            return cast(str, location_name)
+            return location_name  # type: ignore
         raise ValueError(
             'Unable to parse location name (<title/> tag  was not found).'
         )

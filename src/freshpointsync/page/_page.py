@@ -407,9 +407,9 @@ class ProductPage:
         if fetch_info.is_updated:
             assert fetch_info.contents is not None, 'Invalid contents'
             products = await self._parse_contents(fetch_info.contents)
+            return [product for product in products]
         else:
-            products = self._data.products.values()
-        return [product for product in products]
+            return [product for product in self._data.products.values()]
 
     async def update(
         self, silent: bool = False, await_handlers: bool = False, **kwargs: Any

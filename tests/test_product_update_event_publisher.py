@@ -23,9 +23,7 @@ def new_handler(
     else:
         raise ValueError(f'Invalid handler type: {type_}')
     params = [Parameter('context', Parameter.POSITIONAL_OR_KEYWORD)]
-    handler.__signature__ = Signature(
-        parameters=params, return_annotation=None
-    )
+    handler.__signature__ = Signature(parameters=params, return_annotation=None)
     return handler
 
 
@@ -170,9 +168,7 @@ async def test_post_no_subcriptions():  # noqa: RUF029
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    'handler', [new_handler('async'), new_handler('sync')]
-)
+@pytest.mark.parametrize('handler', [new_handler('async'), new_handler('sync')])
 async def test_subscribe_one_to_one_and_post_other(handler):  # noqa: RUF029
     publisher = ProductUpdateEventPublisher()
     publisher.subscribe(handler, ProductUpdateEvent.PRODUCT_ADDED)
@@ -181,9 +177,7 @@ async def test_subscribe_one_to_one_and_post_other(handler):  # noqa: RUF029
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    'handler', [new_handler('async'), new_handler('sync')]
-)
+@pytest.mark.parametrize('handler', [new_handler('async'), new_handler('sync')])
 async def test_subscribe_one_to_one_and_post_once(handler):  # noqa: RUF029
     publisher = ProductUpdateEventPublisher()
     publisher.subscribe(handler, ProductUpdateEvent.PRODUCT_ADDED)
@@ -202,9 +196,7 @@ async def test_subscribe_one_to_one_and_post_once(handler):  # noqa: RUF029
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    'handler', [new_handler('async'), new_handler('sync')]
-)
+@pytest.mark.parametrize('handler', [new_handler('async'), new_handler('sync')])
 async def test_subscribe_one_to_one_and_post_twice(handler):
     publisher = ProductUpdateEventPublisher()
     publisher.subscribe(handler, ProductUpdateEvent.PRODUCT_ADDED)
@@ -228,9 +220,7 @@ async def test_subscribe_one_to_one_and_post_twice(handler):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    'handler', [new_handler('async'), new_handler('sync')]
-)
+@pytest.mark.parametrize('handler', [new_handler('async'), new_handler('sync')])
 async def test_subscribe_one_to_multiple_and_post_each_once(handler):
     publisher = ProductUpdateEventPublisher()
     publisher.subscribe(handler, ProductUpdateEvent.PRODUCT_ADDED)
@@ -238,9 +228,7 @@ async def test_subscribe_one_to_multiple_and_post_each_once(handler):
     product_new = Product(id_=123, name='foo')
     product_old = None
     publisher.post(ProductUpdateEvent.PRODUCT_ADDED, product_new, product_old)
-    publisher.post(
-        ProductUpdateEvent.PRODUCT_REMOVED, product_old, product_new
-    )
+    publisher.post(ProductUpdateEvent.PRODUCT_REMOVED, product_old, product_new)
     await asyncio.sleep(0.1)  # let the event loop run
     assert handler.call_count == 2
 

@@ -114,9 +114,7 @@ def test_find_product_valid(
     prod_id_output: Optional[int],
     product_page_html_parser: ProductPageHTMLParser,
 ):
-    prod = product_page_html_parser.find_product(
-        prod_name_input, prod_id_input
-    )
+    prod = product_page_html_parser.find_product(prod_name_input, prod_id_input)
     assert prod.name == prod_name_output
     assert prod.id_ == prod_id_output
 

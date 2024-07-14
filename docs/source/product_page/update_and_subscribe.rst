@@ -6,10 +6,14 @@ Subscribing to Product Page Updates
 ===================================
 
 Product page data can be updated using the update methods of the ``ProductPage``
-class, namely ``update``, ``update_silently``, ``update_forever``, and
-``init_update_task``. It is also possible to subscribe to product updates
-by registering custom handlers for specific events with
-the ``subscribe_for_update`` method.
+class, namely ``update``, ``update_forever``, and ``init_update_task``. It is
+also possible to fetch the data without updating the inner state of the product
+page instance using the ``fetch`` method.
+
+You can subscribe to product updates by registering custom handlers for specific
+``ProductUpdateEvent`` events with the ``subscribe_for_update`` method. It is
+possible to unsubscribe from updates by calling the ``unsubscribe_from_update``
+method.
 
 Product Page Update Methods
 ---------------------------
@@ -29,10 +33,10 @@ the product page data. It *does not modify* the inner page data of the instance.
 
     async def main():
         async with ProductPage(location_id=296) as page:
-            assert not page.data.products  # page data is empty
-            products = await page.fetch()  # fetch the products
-            assert products                # products have been fetched
-            assert not page.data.products  # page data remains empty
+            assert not page.data.products  # 1. page data is empty
+            products = await page.fetch()  # 2. fetch the products
+            assert products                # 3. products have been fetched
+            assert not page.data.products  # 4. page data remains empty
 
     if __name__ == "__main__":
         asyncio.run(main())
@@ -45,13 +49,14 @@ of the ``ProductPage`` instance.
 
    Providing an invalid location ID will result in an empty list of products.
 
-``update`` and ``update_silently``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+``update``
+~~~~~~~~~~
 
-The ``update`` and ``update_silently`` methods of the ``ProductPage`` class are
-similar. They update the page data with the latest information from the product
-page when called. The difference is that ``update`` triggers registered update
-handlers, while ``update_silently`` does not.
+The ``update`` methods of the ``ProductPage`` class updates the page data with
+the latest information from the product page. Its ``silent`` parameter can
+enable and disable triggering of update handlers during the update process,
+and its ``await_handlers`` parameter can enable and disable waiting for the
+handlers to finish in case they have been executed.
 
 .. code-block:: python
 
@@ -60,15 +65,16 @@ handlers, while ``update_silently`` does not.
 
     async def main():
         async with ProductPage(location_id=296) as page:
-            assert not page.data.products  # page data is empty
-            await page.update()            # update the products
-            assert page.data.products      # page data has been updated
+            assert not page.data.products   # 1. page data is empty
+            await page.update(silent=True)  # 2. update the products
+            assert page.data.products       # 3. page data has been updated
 
     if __name__ == "__main__":
         asyncio.run(main())
 
 In this example, the ``update`` method is used to fetch and update the product
-page data. The new data is stored in the ``data`` attribute of
+page data. The update is performed silently, meaning that no registered update
+handlers would be triggered. The new data is stored in the ``data`` attribute of
 the ``ProductPage`` instance.
 
 ``update_forever`` and ``init_update_task``
@@ -84,8 +90,9 @@ regular intervals and updates the data accordingly.
     sure to set a reasonable update interval to avoid overloading the server.
 
 The ``init_update_task`` method is a simple convenience wrapper around
-``update_forever`` that creates a new asyncio task for the update process. This
-task can be later gracefully cancelled using the ``cancel_update_forever`` method.
+``update_forever`` that creates a new ``asyncio`` task for the update process.
+This task can be later gracefully cancelled using
+the ``cancel_update_forever_task`` method.
 
 .. tip::
 
@@ -127,12 +134,12 @@ Update Event          Description
 Update Handlers
 ~~~~~~~~~~~~~~~
 
-A handler must be a synchronous or asynchronous callable that accepts a single
-argument of type ``ProductUpdateContext``. The context contains the old and new
-product data (if applicable for the update event) and the type of event that
-triggered the update. It can also be used to pass arbitrary data to the handlers.
-To do so, set the desired data as a key-value pair in the ``context`` mapping
-of the ``ProductPage`` instance.
+A handler must be a synchronous callable or an asynchronous coroutine that
+accepts a single argument of type ``ProductUpdateContext``. The context contains
+the old and the new product data (if applicable for the update event) and
+the type of event that triggered the update. It can also be used to pass
+arbitrary data to the handlers. To do so, set the desired data as a key-value
+pair in the ``context`` mapping of the ``ProductPage`` instance.
 
 .. code-block:: python
 
@@ -172,7 +179,9 @@ second, which could correspond to some IO operation.
     The handlers in the example are aimed to run on a product *update* event,
     so both ``context.product_new`` and ``context.product_old`` are guaranteed
     to be present. Unfortunately, there is no way to type-check this within 
-    the ``ProductUpdateContext`` class.
+    the ``ProductUpdateContext`` class. You may check for the presence of these
+    attributes in your handlers with a simple ``if`` statement or ``assert`` or
+    suppress the type-checking warning with ``# type: ignore``.
 
 If a handler is asynchronous, it inherently does not block the event loop. If,
 however, a handler is synchronous, it can be executed directly in a blocking
@@ -186,8 +195,8 @@ handlers are executed in a blocking manner to prevent potential race conditions.
     other parts of the application. If they do, use locks or other
     synchronization mechanisms to avoid race conditions.
 
-``subscribe_for_update``
-~~~~~~~~~~~~~~~~~~~~~~~~
+``subscribe_for_update`` and ``unsubscribe_from_update``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The ``subscribe_for_update`` method of the ``ProductPage`` class is used to
 subscribe to product update events. It takes the following arguments:
@@ -225,6 +234,26 @@ a single argument - the completed future object of the handler.
     event that is triggered for all types of product updates. For example, if a
     product's price has been updated, both ``PRODUCT_UPDATED`` and
     ``PRICE_UPDATED`` event handlers will be executed.
+
+The ``unsubscribe_from_update`` method is used to unsubscribe a handler from
+product update events. It takes the following arguments:
+
+- ``handler``: The handler to be unsubscribed from the event(s).
+  If ``None``, all handlers for the event are unsubscribed.
+
+- ``event``: The type of product update event(s) to unsubscribe from.
+  If ``None``, the handler will be unsubscribed from all events.
+
+.. code-block:: python
+
+    page.unsubscribe_from_update(
+        handler=on_product_update,
+        event=ProductUpdateEvent.PRODUCT_UPDATED
+    )
+
+In the code snippet above, the ``on_product_update`` handler is unsubscribed
+from the ``PRODUCT_UPDATED`` event. The handler will no longer be executed when
+a product update occurs.
 
 Complete Example
 ----------------
@@ -276,7 +305,7 @@ the tracked page.
         try:
             print('Fetching the initial product data...')
             await page.start_session()
-            await page.update_silently()
+            await page.update(silent=True)
             print('Subscribing to updates...')
             page.subscribe_for_update(
                 handler=on_product_update,

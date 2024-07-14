@@ -11,8 +11,8 @@ Creating Product Pages
 
 Instantiating ``ProductPage`` does not automatically establish a client session.
 The session is started and closed explicitly using the ``start_session`` and
-``close_session`` methods, respectively. The page data is fetched explicitly
-using the ``update`` method.
+``close_session`` methods, respectively. The page data is fetched using
+the ``update`` method.
 
 .. code-block:: python
 
@@ -62,7 +62,7 @@ lifecycle automatically, without the need to call ``start_session`` and
     async def main() -> None:
         async with ProductPage(location_id=LOCATION_ID) as page:
             print(f'Fetching data for location ID {page.data.location_id}...')
-            await page.update_silently()
+            await page.update()
             print(f'Location Name: {page.data.location}')
 
     if __name__ == '__main__':
@@ -87,8 +87,8 @@ Serializing Page Data
 ---------------------
 The product page data is represented by a ``ProductPageData`` object, which is
 a Pydantic model. It is stored in the ``data`` attribute of the ``ProductPage``
-instance. The page data is empty upon initialization and is updated when an
-update method is called. However, you can provide the initial data for this
+instance. The page data is empty upon initialization and is updated when
+an update method is called. However, you can provide the initial data for this
 attribute when creating a new page instance by passing a ``ProductPageData``
 object to the ``data`` parameter of the ``ProductPage`` constructor. It is also
 possible to serialize the data and store it between application sessions.
@@ -121,8 +121,8 @@ and deserialization of the page data.
     from pathlib import Path
     from freshpointsync import ProductPage, ProductPageData
 
-    CACHE_FILE = 'pageData.json'
     LOCATION_ID = 296
+    CACHE_FILENAME = f'pageData_{LOCATION_ID}.json'
 
     def load_from_file(file_path: str) -> ProductPageData:
         print(f"Loading data from cache file '{file_path}'...")
@@ -135,9 +135,9 @@ and deserialization of the page data.
             f.write(data.model_dump_json(indent=4, by_alias=True))
 
     async def main() -> None:
-        cache_file = Path(CACHE_FILE)
+        cache_file = Path(CACHE_FILENAME)
         if cache_file.exists():
-            data = load_from_file(CACHE_FILE)
+            data = load_from_file(CACHE_FILENAME)
             async with ProductPage(data=data) as page:
                 print(f'Updating data for location ID {page.data.location_id}...')
                 await page.update()
@@ -145,23 +145,23 @@ and deserialization of the page data.
                     print('Product page has changed since the last update.')
                 else:
                     print('Product page has not changed since the last update.')
-                dump_to_file(page.data, CACHE_FILE)
+                dump_to_file(page.data, CACHE_FILENAME)
         else:
             async with ProductPage(location_id=LOCATION_ID) as page:
                 print(f'Fetching data for location ID {page.data.location_id}...')
                 await page.update()
-                dump_to_file(page.data, CACHE_FILE)
+                dump_to_file(page.data, CACHE_FILENAME)
             print('[tip] Run the script again to check for updates.')
 
     if __name__ == '__main__':
         asyncio.run(main())
 
-In the example above, a ``ProductPageData`` object is created from
-the serialized data stored in the ``pageData.json`` file. A new ``ProductPage``
-instance is created with this data. The page data is then updated, and
-the script prints whether the page has changed since the last update based on
-the value of MD5 hash of the page HTML contents. Finally, the updated data is
-serialized and stored back to the file.
+In the example above, a ``ProductPageData`` object for location ID 296 is
+created from the serialized data stored in a cache file ``pageData_296.json``.
+A new ``ProductPage`` instance is created with this data. The page data is then
+updated, and the script prints whether the page has changed since the last
+update based on the value of MD5 hash of the page HTML contents. Finally,
+the updated data is serialized and stored back to the file.
 
 .. tip::
     It is possible to create an empty ``ProductPageData`` object. The only

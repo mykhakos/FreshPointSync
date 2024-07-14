@@ -94,7 +94,8 @@ Minimal Example
 
 The following example demonstrates how to fetch data from a FreshPoint webpage 
 based on its specific location ID and print the location name, overall product
-count, and the number of available products.
+count, and the number of available products. The extracted data is then dumped
+to a JSON file.
 
 .. code-block:: python
 
@@ -102,17 +103,24 @@ count, and the number of available products.
     from freshpointsync import ProductPage
 
     LOCATION_ID = 296  # from https://my.freshpoint.cz/device/product-list/296
+    CACHE_FILENAME = f'pageData_{LOCATION_ID}.json'
 
     async def main() -> None:
         async with ProductPage(location_id=LOCATION_ID) as page:
             await page.update()
-            products = page.find_products()
-            products_available = [p for p in products if p.is_available]
+
+            products_available = [
+                p for p in page.data.products.values() if p.is_available
+            ]
             print(
                 f'Location name: {page.data.location}\n'
-                f'Product count: {len(products)} '
+                f'Product count: {len(page.data.products)} '
                 f'({len(products_available)} in stock)'
             )
+
+        page_data = page.data.model_dump_json(indent=4, by_alias=True)
+        with open(CACHE_FILENAME, 'w', encoding='utf-8') as file:
+            file.write(page_data)
 
     if __name__ == '__main__':
         asyncio.run(main())

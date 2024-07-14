@@ -1,7 +1,7 @@
 API Reference
 =============
 
-API reference for the ``freshpointsync`` library.
+API reference for the FreshPointSync library.
 
 The API is designed to provide both high-level interfaces for fetching and
 updating FreshPoint product data, as well as low-level interfaces that perform
@@ -39,6 +39,11 @@ straigh from ``freshpointsync``.
 --------------------------
 
    .. automodule:: freshpointsync.product
+
+``freshpointsync.runner``
+--------------------------
+
+   .. automodule:: freshpointsync.runner
 
 ``freshpointsync.update``
 -------------------------

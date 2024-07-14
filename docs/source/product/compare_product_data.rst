@@ -23,6 +23,7 @@ We start with two snapshots of the same product taken at different times.
         quantity=4,
         price_curr=40.26,
         price_full=57.52,
+        info='Obsah balení: 140g',  # shortened for brevity
         pic_url='',  # omitted for brevity
         location_id=296,
         location='Elektroline',
@@ -39,6 +40,7 @@ We start with two snapshots of the same product taken at different times.
         quantity=0,
         price_curr=57.52,
         price_full=57.52,
+        info='Obsah balení: 140g',  # shortened for brevity
         pic_url='',  # omitted for brevity
         location_id=296,
         location='Elektroline',
@@ -48,7 +50,7 @@ We start with two snapshots of the same product taken at different times.
 In this example, we create two snapshots of the "Pappudio Croissant sýrový"
 product. The previous snapshot has a quantity of 4 pieces and is on sale for
 40.26 CZK, while the current snapshot is out of stock and costs 57.52 CZK.
-The product ID, name, category, and location remain the same.
+The product ID, name, category, info, and location remain the same.
 
 Comparing Product Timestamps
 ----------------------------
@@ -74,7 +76,7 @@ object, which is returned by the ``compare_price`` method.
 
     price_info = product_prev.compare_price(new=product_curr)
     print(
-        f'Current price increase: {price_info.price_curr_increase} CZK\n'
+        f'Current price increase: {price_info.price_curr_increase:.2f} CZK\n'
         f'Sale ended: {price_info.sale_ended}'
     )
 
@@ -139,6 +141,7 @@ Complete Example
         quantity=4,
         price_curr=40.26,
         price_full=57.52,
+        info='Obsah balení: 140g',  # shortened for brevity
         pic_url='',  # omitted for brevity
         location_id=296,
         location='Elektroline',
@@ -155,6 +158,7 @@ Complete Example
         quantity=0,
         price_curr=57.52,
         price_full=57.52,
+        info='Obsah balení: 140g',  # shortened for brevity
         pic_url='',  # omitted for brevity
         location_id=296,
         location='Elektroline',
@@ -169,7 +173,7 @@ Complete Example
 
     price_info = product_prev.compare_price(new=product_curr)
     print(
-        f'Current price increase: {price_info.price_curr_increase} CZK\n'
+        f'Current price increase: {price_info.price_curr_increase:.2f} CZK\n'
         f'Sale ended: {price_info.sale_ended}'
     )
 

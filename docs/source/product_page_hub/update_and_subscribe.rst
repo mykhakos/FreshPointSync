@@ -11,10 +11,10 @@ covered here just briefly. For a detailed explanation, please refer to
 Update and Subscription Logic
 -----------------------------
 
-``ProductPageHub`` provides the ``update``, ``update_silently``,
-``update_forever``, and ``init_update_task`` methods to fetch and update data
-for all managed product pages. Similarly, subscription to product updates
-is handled using the ``subscribe_for_update`` method.
+``ProductPageHub`` provides the ``update``, ``update_forever``, and
+``init_update_task`` methods to fetch and update data for all managed product
+pages. Similarly, subscription to product updates is handled using
+the ``subscribe_for_update`` and ``unsubscribe_for_update`` methods.
 
 .. note::
 
@@ -63,6 +63,11 @@ multiple product pages, subscribe to updates, and handle them using custom
 handlers.
 
 .. code-block:: python
+
+    import asyncio
+    from datetime import datetime
+    from freshpointsync import ProductUpdateEvent, ProductPageHub
+    from freshpointsync.update import ProductUpdateContext
 
     async def on_product_update(context: ProductUpdateContext) -> None:
         """Handle all product update events."""

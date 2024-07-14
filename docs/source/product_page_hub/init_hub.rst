@@ -24,7 +24,7 @@ provided methods.
         try:
             await hub.start_session()
             print('Adding pages to the hub...')
-            await hub.new_page(location_id=296)
+            await hub.new_page(location_id=296, fetch_contents=True)
         finally:
             print('Closing hub session...')
             await hub.close_session()
@@ -48,7 +48,7 @@ The same can be achieved using the asynchronous context manager.
         async with ProductPageHub() as hub:
             await hub.start_session()
             print('Adding pages to the hub...')
-            await hub.new_page(location_id=296)
+            await hub.new_page(location_id=296, fetch_contents=True)
 
     if __name__ == '__main__':
         asyncio.run(main())
@@ -83,7 +83,8 @@ method.
     )
 
 The example above adds a new page with ID 296 to the hub. The page data is
-automatically fetched. The common registered event handlers are not triggered.
+fetched. The common registered event handlers are not triggered during the
+data update.
 
 Adding Existing Pages
 ---------------------
@@ -92,16 +93,16 @@ An existing page can be added to the hub by using the ``add_page`` method.
 
 .. code-block:: python
 
-    # ... assuming the page is already created
+    # ... assuming the page object is already created
 
     await hub.add_page(
         page=page,
-        update_contents = False,
-        trigger_handlers = False,
+        update_contents=False,
+        trigger_handlers=False,
     )
 
 The example above adds an existing page to the hub. The page data is not
-automatically updated. The common registered event handlers are not triggered.
+updated. The common registered event handlers are not triggered.
 
 Scanning for Pages
 ------------------
@@ -121,15 +122,15 @@ specifies the increment value between the IDs.
 .. note::
     The ``scan`` method execution depends on the ID range and the chosen
     processing strategy. The larger the range, the longer the execution time.
-    Scanning for a default range of 1 to 1000 with a step of 1 may take up to
-    12 minutes.
+    Initial scanning with a default ID range of 1 to 1000 with a step of 1 may
+    take up to 10 minutes.
 
 Accessing Pages
 ---------------
 
-The pages in the hub can be accessed using the ``pages`` attribute. This
-attribute is a dictionary where the keys are the page IDs, and the values are
-the corresponding page objects.
+The pages in the hub can be accessed using the read-only ``pages`` attribute.
+This attribute is a dictionary where the keys are the page IDs, and the values
+are the corresponding page objects.
 
 .. code-block:: python
 
@@ -144,7 +145,7 @@ A removed page receives a new client without an initialized session.
 
 .. code-block:: python
 
-    await hub.remove_page(page_id=296)
+    await hub.remove_page(296)
 
 The example above removes the page with ID 296 from the hub.
 

@@ -26,6 +26,7 @@ Let's reuse the ``product`` object we created in the previous section:
         quantity=4,
         price_curr=40.26,
         price_full=57.52,
+        info='Obsah balení: 140g',  # shortened for brevity
         pic_url='',  # omitted for brevity
         location_id=296,
         location='Elektroline',
@@ -113,6 +114,7 @@ Complete Example
         quantity=4,
         price_curr=40.26,
         price_full=57.52,
+        info='Obsah balení: 140g',  # shortened for brevity
         pic_url='',  # omitted for brevity
         location_id=296,
         location='Elektroline'

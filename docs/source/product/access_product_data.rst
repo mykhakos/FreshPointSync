@@ -29,6 +29,7 @@ the product at a certain point in time.
         quantity=4,
         price_curr=40.26,
         price_full=57.52,
+        info='Obsah balení: 140g',  # shortened for brevity
         pic_url='',  # omitted for brevity
         location_id=296,
         location='Elektroline'
@@ -66,6 +67,17 @@ comparison and searching.
 
     Try to access the category of the product using the ``category`` attribute
     and the ``category_lowercase_ascii`` property.
+
+
+Accessing Product Information
+-----------------------------
+The ``info`` attribute may contain additional information about the product,
+such as the weight, ingredients, nutrition facts, etc.
+
+.. code-block:: python
+
+    print(f'Info: {product.info}')
+
 
 Accessing Product Price
 -----------------------
@@ -119,6 +131,7 @@ Complete Example
         quantity=4,
         price_curr=40.26,
         price_full=57.52,
+        info='Obsah balení: 140g',  # shortened for brevity
         pic_url='',  # omitted for brevity
         location_id=296,
         location='Elektroline'
@@ -126,6 +139,11 @@ Complete Example
 
     print(f'Name: {product.name}')
     print(f'Name (lowercase ASCII): {product.name_lowercase_ascii}')
+    print(f'Category: {product.category}')
+    print(f'Category (lowercase ASCII): {product.category_lowercase_ascii}')
+    print(f'Location: {product.location}')
+    print(f'Location (lowercase ASCII): {product.location_lowercase_ascii}')
+    print(f'Info: {product.info}')
     print(f'Current price: {product.price_curr} CZK')
     print(f'Regular price: {product.price_full} CZK')
     print(f'Quantity in stock: {product.quantity} pieces')

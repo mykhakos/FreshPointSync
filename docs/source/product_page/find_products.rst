@@ -60,7 +60,7 @@ Complete Example
 
     async def main():
         async with ProductPage(location_id=296) as page:
-            await page.update_silently()
+            await page.update(silent=True)
 
             cola = page.find_product(name='Harboe Cola')
             if cola is None:
@@ -166,14 +166,14 @@ prints its availability.
         return input('Enter product name (or "exit" to quit): ')
 
     async def prompt_forever(page: ProductPage, max_update_interval: float) -> None:
-        await page.update_silently()
+        await page.update(silent=True)
         timer = time.time()
         while True:
             product_name = get_user_input()
             if product_name == 'exit':
                 break
             if time.time() - timer > max_update_interval:
-                await page.update_silently()
+                await page.update(silent=True)
                 timer = time.time()
             print_product_info(page, product_name)
 

@@ -1,3 +1,4 @@
+import logging
 import sys
 import time
 from dataclasses import dataclass
@@ -18,6 +19,8 @@ if sys.version_info >= (3, 11):
 else:
     from typing_extensions import NamedTuple
 
+logger = logging.getLogger('freshpointsync.product')
+"""Logger for the `freshpointsync.product` package."""
 
 DEFAULT_PIC_URL = (
     r'https://images.weserv.nl/?url=http://freshpoint.freshserver.cz/'

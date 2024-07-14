@@ -12,6 +12,7 @@ from ._product import (
     Product,
     ProductPriceUpdateInfo,
     ProductQuantityUpdateInfo,
+    logger,
 )
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     'Product',
     'ProductPriceUpdateInfo',
     'ProductQuantityUpdateInfo',
+    'logger',
 ]

@@ -11,6 +11,7 @@ from ._page import (
     ProductPageData,
     ProductPageHub,
     ProductPageHubData,
+    logger,
 )
 
 __all__ = [
@@ -19,4 +20,5 @@ __all__ = [
     'ProductPageData',
     'ProductPageHub',
     'ProductPageHubData',
+    'logger',
 ]

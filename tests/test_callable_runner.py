@@ -8,7 +8,7 @@ from typing import Literal, Optional, Union
 from unittest.mock import AsyncMock, MagicMock, create_autospec
 
 import pytest
-from freshpointsync.update import CallableRunner
+from freshpointsync.runner import CallableRunner
 
 logger = logging.getLogger(__name__)
 
@@ -75,9 +75,7 @@ async def test_run_async_exception_run_unsafe(runner: CallableRunner):
     result = 'notset'
     with pytest.raises(ValueError):
         result = await task
-    assert (
-        result == 'notset'
-    )  # ValueError is propagated, result is not changed
+    assert result == 'notset'  # ValueError is propagated, result is not changed
     func.assert_called_once()
 
 
@@ -107,9 +105,7 @@ async def test_run_sync_exception_run_unsafe(runner: CallableRunner):
     result = 'notset'
     with pytest.raises(ValueError):
         result = await task
-    assert (
-        result == 'notset'
-    )  # ValueError is propagated, result is not changed
+    assert result == 'notset'  # ValueError is propagated, result is not changed
     func.assert_called_once()
 
 

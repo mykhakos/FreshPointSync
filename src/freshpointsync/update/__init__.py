@@ -4,7 +4,6 @@ changes in FreshPoint product data. It is a part of the low-level API.
 
 from ._update import (
     AsyncHandler,
-    CallableRunner,
     Handler,
     HandlerValidator,
     ProductCacheUpdater,
@@ -13,11 +12,11 @@ from ._update import (
     ProductUpdateEventPublisher,
     SyncHandler,
     is_valid_handler,
+    logger,
 )
 
 __all__ = [
     'AsyncHandler',
-    'CallableRunner',
     'Handler',
     'HandlerValidator',
     'ProductCacheUpdater',
@@ -26,4 +25,5 @@ __all__ = [
     'ProductUpdateEventPublisher',
     'SyncHandler',
     'is_valid_handler',
+    'logger',
 ]

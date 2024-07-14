@@ -10,6 +10,7 @@ from typing import (
     List,
     NamedTuple,
     Optional,
+    Tuple,
     Type,
     TypeVar,
     Union,
@@ -21,13 +22,13 @@ from pydantic.alias_generators import to_camel
 from ..client._client import ProductDataFetchClient
 from ..parser._parser import (
     ProductFinder,
-    ProductPageHTMLParser,
     hash_text,
     normalize_text,
+    parse_page_contents,
 )
 from ..product._product import Product
+from ..runner._runner import CallableRunner
 from ..update._update import (
-    CallableRunner,
     Handler,
     ProductCacheUpdater,
     ProductUpdateEvent,
@@ -35,7 +36,7 @@ from ..update._update import (
 )
 
 logger = logging.getLogger('freshpointsync.page')
-"""Logger for the `freshpointsync.page` module."""
+"""Logger for the `freshpointsync.page` package."""
 
 
 class FetchInfo(NamedTuple):
@@ -156,8 +157,6 @@ class ProductPage:
     ) -> None:
         """Asynchronous context manager exit."""
         await self.close_session()
-        await self.cancel_update_handlers()
-        await self.cancel_update_forever()
 
     @staticmethod
     def _validate_data(
@@ -187,6 +186,18 @@ class ProductPage:
         if location_id is not None and location_id != data.location_id:
             raise ValueError('Location ID mismatch')
         return data
+
+    async def start_session(self) -> None:
+        """Start an aiohttp client session if one is not already started."""
+        await self._client.start_session()
+
+    async def close_session(self) -> None:
+        """Close the aiohttp client session if one is open."""
+        await self._client.close_session()
+        await self.cancel_update_forever_task()
+        await self.cancel_update_handlers()
+        if self._runner.executor:
+            self._runner.executor.shutdown(wait=True)
 
     @property
     def data(self) -> ProductPageData:
@@ -224,9 +235,7 @@ class ProductPage:
         ] = None,
         call_safe: bool = True,
         call_blocking: bool = True,
-        handler_done_callback: Optional[
-            Callable[[asyncio.Future], Any]
-        ] = None,
+        handler_done_callback: Optional[Callable[[asyncio.Future], Any]] = None,
     ) -> None:
         """Subscribe a handler to specific product update event(s). The handler
         will be invoked when the event is posted, with the event context
@@ -306,23 +315,13 @@ class ProductPage:
         """
         return self._publisher.is_subscribed(handler, event)
 
-    async def start_session(self) -> None:
-        """Start an aiohttp client session if one is not already started."""
-        await self._client.start_session()
-
-    async def close_session(self) -> None:
-        """Close the aiohttp client session if one is open."""
-        await self._client.close_session()
-        await self._runner.cancel_all()
-        await self.cancel_update_forever()
-
     async def _fetch_contents(self) -> FetchInfo:
-        """Fetch the contents of the product page.
+        """Fetch the HTML contents of the product page.
 
         Returns:
-            FetchInfo: Named tuple containing the fetched contents, the hash
-                of the contents, and a flag indicating whether the contents
-                have been updated.
+            FetchInfo: Named tuple containing the fetched HTML contents,
+                the hash of the contents, and a flag indicating whether
+                the contents have been updated.
         """
         is_updated: bool = False
         try:
@@ -331,7 +330,7 @@ class ProductPage:
             )
         except asyncio.CancelledError:
             return FetchInfo(None, None, is_updated)
-        if contents is None:
+        if not contents:
             return FetchInfo(None, None, is_updated)
         contents_hash = hash_text(contents)
         if contents_hash != self.data.html_hash:
@@ -340,38 +339,61 @@ class ProductPage:
             # fetching is not supposed to modify the inner state of the page
         return FetchInfo(contents, contents_hash, is_updated)
 
-    @staticmethod
-    def _parse_contents_blocking(contents: str) -> List[Product]:
-        """Blocking synchronous function to parse the contents of the product
-        page and extract product data.
+    async def _parse_contents(self, contents: str) -> Tuple[Product, ...]:
+        """Parse the contents of the product page and extract product data.
+
+        The blocking synchronous parsing function is executed in a separate
+        thread or process to avoid blocking the event loop.
 
         Args:
             contents (str): The HTML contents of the product page.
 
         Returns:
-            list[Product]: List of product data extracted from the contents.
-        """
-        return [p for p in ProductPageHTMLParser(contents).products]
-
-    async def _parse_contents(self, contents: str) -> List[Product]:
-        """Asynchronously parse the contents of the product page and extract
-        product data. This method is a wrapper around the blocking synchronous
-        parsing function that run in a way that does not block the event loop.
-
-        Args:
-            contents (str): The HTML contents of the product page.
-
-        Returns:
-            list[Product]: List of product data extracted from the contents.
+            tuple[Product]: Tuple of product data extracted from the contents.
         """
         if not contents:
-            return []
+            return tuple()
         try:
-            func = self._parse_contents_blocking
-            products = await self._runner.run_sync(func, contents)
+            products = await self._runner.run_sync(
+                parse_page_contents,
+                contents,
+                run_safe=False,  # run_safe=True crashes ProcessPoolExecutor
+                run_blocking=False,
+            )
         except asyncio.CancelledError:
-            return []
-        return products or []
+            raise
+        except Exception:
+            return tuple()
+        return products or tuple()
+
+    async def _update_products(
+        self,
+        products: Iterable[Product],
+        html_hash: str,
+        silent: bool,
+        await_handlers: bool,
+        **kwargs: Any,
+    ) -> None:
+        """Update the internal state of the product page with the new product
+        data. Optionally trigger and await event handlers.
+
+        Args:
+            products (Iterable[Product]): An iterable of product data to update.
+            html_hash (str): The SHA-256 hash of the HTML contents of the page.
+            silent (bool): If True, the product data is updated without
+                triggering any event handlers.
+            await_handlers (bool, optional): If True, all event handlers are
+                awaited to complete execution. This parameter has no effect if
+                `silent` is True.
+            **kwargs (Any): Additional keyword arguments to pass to the event
+                handlers. If the `silent` parameter is True, these arguments
+                are ignored.
+        """
+        self.data.html_hash = html_hash
+        if silent:
+            self._updater.update_silently(products)
+        else:
+            await self._updater.update(products, await_handlers, **kwargs)
 
     async def fetch(self) -> List[Product]:
         """Fetch the contents of the product page and extract the product data.
@@ -384,81 +406,45 @@ class ProductPage:
         fetch_info = await self._fetch_contents()
         if fetch_info.is_updated:
             assert fetch_info.contents is not None, 'Invalid contents'
-            return await self._parse_contents(fetch_info.contents)
-        return [p for p in self._data.products.values()]
-
-    def _update_silently(
-        self, html_hash: str, products: Iterable[Product]
-    ) -> None:
-        """Fetch the contents of the product page, extract the product data,
-        and update the internal state of the page without triggering any event
-        handlers.
-
-        Args:
-            html_hash (str): The SHA-256 hash of the HTML contents.
-            products (Iterable[Product]): Iterable of product data to update.
-        """
-        self.data.html_hash = html_hash
-        self._updater.update_silently(products)
-
-    async def update_silently(self) -> None:
-        """Fetch the contents of the product page, extract the product data,
-        and update the internal state of the page without triggering any event
-        handlers.
-        """
-        fetch_info = await self._fetch_contents()
-        if fetch_info.is_updated:
-            assert fetch_info.contents is not None, 'Invalid contents'
-            assert fetch_info.contents_hash is not None, 'Invalid hash'
             products = await self._parse_contents(fetch_info.contents)
-            self._update_silently(fetch_info.contents_hash, products)
-
-    async def _update(
-        self,
-        html_hash: str,
-        products: Iterable[Product],
-        await_handlers: bool = False,
-        **kwargs: Any,
-    ) -> None:
-        """Fetch the contents of the product page, extract the product data,
-        update the internal state of the page, and trigger event handlers.
-
-        Args:
-            html_hash (str): The SHA-256 hash of the HTML contents.
-            products (Iterable[Product]): Iterable of product data to update.
-            await_handlers (bool, optional): If True, the method will wait for
-                all event handlers to complete execution. Defaults to False.
-            **kwargs (Any): Additional keyword arguments to pass to the event
-                handlers.
-        """
-        self.data.html_hash = html_hash
-        await self._updater.update(products, await_handlers, **kwargs)
+        else:
+            products = self._data.products.values()
+        return [product for product in products]
 
     async def update(
-        self, await_handlers: bool = False, **kwargs: Any
+        self, silent: bool = False, await_handlers: bool = False, **kwargs: Any
     ) -> None:
         """Fetch the contents of the product page, extract the product data,
         update the internal state of the page, and trigger event handlers.
 
         Args:
-            await_handlers (bool, optional): If True, the method will wait for
-                all event handlers to complete execution. Defaults to False.
+            silent (bool, optional): If True, the product data is updated
+                without triggering any event handlers. Defaults to False.
+            await_handlers (bool, optional): If True, all event handlers are
+                awaited to complete execution. This parameter has no effect if
+                `silent` is True. Defaults to False.
             **kwargs (Any): Additional keyword arguments to pass to the event
-                handlers.
+                handlers. If the `silent` parameter is True, these arguments
+                are ignored.
         """
         fetch_info = await self._fetch_contents()
         if fetch_info.is_updated:
             assert fetch_info.contents is not None, 'Invalid contents'
             assert fetch_info.contents_hash is not None, 'Invalid hash'
             products = await self._parse_contents(fetch_info.contents)
-            await self._update(
-                fetch_info.contents_hash, products, await_handlers, **kwargs
+            await self._update_products(
+                products,
+                fetch_info.contents_hash,
+                silent,
+                await_handlers,
+                **kwargs,
             )
 
     async def update_forever(
         self,
         interval: float = 10.0,
         await_handlers: bool = False,
+        silent: bool = False,
         **kwargs: Any,
     ) -> None:
         """Update the product page at regular intervals.
@@ -469,14 +455,18 @@ class ProductPage:
         Args:
             interval (float, optional): The time interval in seconds between
                 updates. Defaults to 10.0.
-            await_handlers (bool, optional): If True, the method will wait for
-                all event handlers to complete execution. Defaults to False.
+            silent (bool, optional): If True, the product data is updated
+                without triggering any event handlers. Defaults to False.
+            await_handlers (bool, optional): If True, all event handlers are
+                awaited to complete execution. This parameter has no effect if
+                `silent` is True. Defaults to False.
             **kwargs (Any): Additional keyword arguments to pass to the event
-                handlers.
+                handlers. If the `silent` parameter is True, these arguments
+                are ignored.
         """
         while True:
             try:
-                await self.update(await_handlers, **kwargs)
+                await self.update(await_handlers, silent, **kwargs)
             except asyncio.CancelledError:
                 break
             await asyncio.sleep(interval)
@@ -484,6 +474,7 @@ class ProductPage:
     def init_update_forever_task(
         self,
         interval: float = 10.0,
+        silent: bool = False,
         await_handlers: bool = False,
         **kwargs: Any,
     ) -> asyncio.Task:
@@ -498,10 +489,14 @@ class ProductPage:
         Args:
             interval (float, optional): The time interval in seconds between
                 updates. Defaults to 10.0.
-            await_handlers (bool, optional): If True, the method will wait for
-                all event handlers to complete execution. Defaults to False.
+            silent (bool, optional): If True, the product data is updated
+                without triggering any event handlers. Defaults to False.
+            await_handlers (bool, optional): If True, all event handlers are
+                awaited to complete execution. This parameter has no effect if
+                `silent` is True. Defaults to False.
             **kwargs (Any): Additional keyword arguments to pass to the event
-                handlers.
+                handlers. If the `silent` parameter is True, these arguments
+                are ignored.
 
         Returns:
             asyncio.Task: The task object created by `asyncio.create_task`.
@@ -509,20 +504,12 @@ class ProductPage:
         task = self._update_forever_task
         if task is None or task.done():
             task = asyncio.create_task(
-                self.update_forever(interval, await_handlers, **kwargs)
+                self.update_forever(interval, silent, await_handlers, **kwargs)
             )
             self._update_forever_task = task
         return task
 
-    async def await_update_handlers(self) -> None:
-        """Wait for all event handlers to complete execution."""
-        await self._runner.await_all()
-
-    async def cancel_update_handlers(self) -> None:
-        """Cancel all running event handlers."""
-        await self._runner.cancel_all()
-
-    async def cancel_update_forever(self) -> None:
+    async def cancel_update_forever_task(self) -> None:
         """Cancel the update forever task if it is running."""
         if self._update_forever_task:
             if not self._update_forever_task.done():
@@ -533,6 +520,14 @@ class ProductPage:
                 except asyncio.CancelledError:
                     pass
             self._update_forever_task = None
+
+    async def await_update_handlers(self) -> None:
+        """Wait for all event handlers to complete execution."""
+        await self._runner.await_all()
+
+    async def cancel_update_handlers(self) -> None:
+        """Cancel all running event handlers."""
+        await self._runner.cancel_all()
 
     def _find_product_by_id(
         self,
@@ -691,7 +686,22 @@ class ProductPageHub:
     ) -> None:
         """Asynchronous context manager exit."""
         await self.close_session()
-        await self.await_update_handlers()
+
+    async def start_session(self) -> None:
+        """Start an aiohttp client session if one is not already started."""
+        await self._client.start_session()
+
+    async def close_session(self) -> None:
+        """Close the aiohttp client session if one is open."""
+        await self._client.close_session()
+        await self.cancel_update_forever_task()
+        pages_cancel_tasks = [
+            page.cancel_update_forever_task() for page in self._pages.values()
+        ]
+        await asyncio.gather(*pages_cancel_tasks)
+        await self.cancel_update_handlers()
+        if self._runner.executor:
+            self._runner.executor.shutdown(wait=True)
 
     @property
     def data(self) -> ProductPageHubData:
@@ -726,9 +736,7 @@ class ProductPageHub:
         ] = None,
         call_safe: bool = True,
         call_blocking: bool = True,
-        handler_done_callback: Optional[
-            Callable[[asyncio.Future], Any]
-        ] = None,
+        handler_done_callback: Optional[Callable[[asyncio.Future], Any]] = None,
     ) -> None:
         """Subscribe a handler to specific product update event(s) for all
         pages in the hub. The handler will be invoked when the event is posted,
@@ -843,24 +851,11 @@ class ProductPageHub:
         for page in self._pages.values():
             page.context.pop(key, None)
 
-    async def start_session(self) -> None:
-        """Start an aiohttp client session if one is not already started."""
-        await self._client.start_session()
-
-    async def close_session(self) -> None:
-        """Close the aiohttp client session if one is open."""
-        await self._client.close_session()
-        await self.cancel_update_handlers()
-        if self._runner.executor:
-            self._runner.executor.shutdown(wait=True)
-        for page in self._pages.values():
-            await page.cancel_update_forever()
-
     async def _register_page(
         self,
         page: ProductPage,
         update_contents: bool,
-        trigger_handlers: bool = False,
+        update_silent: bool = True,
     ) -> None:
         """Register a new product page in the hub.
 
@@ -868,11 +863,15 @@ class ProductPageHub:
             page (ProductPage): The product page object to register.
             update_contents (bool): If True, the page contents are fetched and
                 updated. If False, the page contents are not fetched.
-            trigger_handlers (bool, optional): If True, the event handlers are
-                triggered after the page is updated. Defaults to False.
+            update_silent (bool, optional): If True, the event handlers are not
+                triggered after the page is updated. If `update_contents` is
+                False, this parameter has no effect. Defaults to True.
         """
         self._data.pages[page.data.location_id] = page.data
         self._pages[page.data.location_id] = page
+        if page.client != self._client:
+            await page.set_client(self._client)
+        page._runner = self._runner
         # add common handlers
         pub = self._publisher
         for subscribers in (pub.sync_subscribers, pub.async_subscribers):
@@ -889,12 +888,9 @@ class ProductPageHub:
         # add common context
         for key, value in self._publisher.context.items():
             page.context[key] = value
-        # add page contents (optional)
+        # update page contents (optional)
         if update_contents:
-            if trigger_handlers:
-                await page.update()
-            else:
-                await page.update_silently()
+            await page.update(silent=update_silent)
 
     def _unregister_page(self, location_id: int) -> None:
         """Unregister a product page from the hub.
@@ -916,7 +912,9 @@ class ProductPageHub:
         fetch_contents: bool = False,
         trigger_handlers: bool = False,
     ) -> ProductPage:
-        """Create a new product page and register it in the hub.
+        """Create a new product page and register it in the hub. The page
+        receives a common client. Its contents can be fetched and updated
+        optionally.
 
         Args:
             location_id (int): ID of the product location.
@@ -924,7 +922,8 @@ class ProductPageHub:
                 fetched and updated. If False, the page contents are empty.
                 Defaults to False.
             trigger_handlers (bool, optional): If True, the event handlers are
-                triggered after the page is updated. Defaults to False.
+                triggered after the page contents are fetched. This parameter
+                has no effect if `fetch_contents` is False. Defaults to False.
 
         Returns:
             ProductPage: The newly created product page object.
@@ -940,34 +939,31 @@ class ProductPageHub:
         trigger_handlers: bool = False,
     ) -> None:
         """Add an existing product page to the hub. The page retains its own
-        state, but receives a common client. Its contents and event handlers
-        are updated, too.
+        state, but receives a common client. Its contents can be fetched and
+        updated optionally.
 
         Args:
             page (ProductPage): The product page object to add.
             update_contents (bool, optional): If True, the page contents are
                 fetched and updated. If False, the page contents remain as is.
             trigger_handlers (bool, optional): If True, the event handlers are
-                triggered after the page is updated. Defaults to False.
+                triggered after the page contents are updated. This parameter
+                has no effect if `update_contents` is False. Defaults to False.
         """
-        if page.client != self._client:
-            await page.set_client(self._client)
         await self._register_page(page, update_contents, trigger_handlers)
 
     async def remove_page(
         self, location_id: int, await_handlers: bool = False
     ) -> ProductPage:
-        """Remove a product page from the hub.
-
-        This method unregisters the page from the hub, creates a new client
-        for the page, and cancels (or awaits) all event handlers. It acts
-        similarly to the dictionary `pop` method.
+        """Remove a product page from the hub. The page retains its own state,
+        but receives a new client. All event handlers are cancelled or awaited.
 
         Args:
             location_id (int): ID of the product location.
             await_handlers (bool, optional): If True, the method will wait for
                 all event handlers bound to the page to complete execution.
-                Defaults to False.
+                Otherwise, the method will cancel all event handlers. Defaults
+                to False.
 
         Raises:
             KeyError: If the page is not found.
@@ -978,19 +974,21 @@ class ProductPageHub:
         if location_id not in self._pages:
             raise KeyError(f'Page with location ID {location_id} not found')
         page = self._pages[location_id]
-        self._unregister_page(location_id)
         if await_handlers:
             await page.await_update_handlers()
         else:
             await page.cancel_update_handlers()
+        self._unregister_page(location_id)
         page._client = ProductDataFetchClient()
+        page._runner = CallableRunner(executor=None)
         return page
 
     async def scan(
         self, start: int = 1, stop: int = 999, step: int = 1
     ) -> None:
         """Scan for new product pages in a range of location IDs. The pages
-        that are valid and have products are registered in the hub.
+        that are valid and have products are registered in the hub. The existing
+        pages are updated. The update handlers are not triggered.
 
         Note: unlike Python's `range` function, the `stop` parameter is
         inclusive.
@@ -1000,134 +998,72 @@ class ProductPageHub:
             stop (int, optional): Stop location ID. Defaults to 999.
             step (int, optional): Step size for location IDs. Defaults to 1.
         """
+        # init new pages without fetching contents
         for loc in range(start, stop + 1, step):
-            if loc in self._pages:
-                continue
-            await self.new_page(
-                location_id=loc, fetch_contents=False, trigger_handlers=False
-            )
-        await self.update_silently()
-        inexistent_locations = [
+            if loc not in self._pages:
+                await self.new_page(location_id=loc, fetch_contents=False)
+        # update new and existing pages
+        await self.update(silent=True)
+        # remove pages with invalid location IDs (no products)
+        inexistent_location_ids = [
             loc for loc, page in self._pages.items() if not page.data.products
         ]
-        for loc in inexistent_locations:
+        for loc in inexistent_location_ids:
             self._unregister_page(loc)
 
-    async def _fetch_contents(self) -> Dict[int, FetchInfo]:
-        """Fetch the contents of all product pages in the hub.
-
-        Returns:
-            dict[int, FetchInfo]: Dictionary of fetched contents, hashes, and
-                update flags for each page.
-        """
-        tasks: list[asyncio.Task] = []
-        for page in self._pages.values():
-            tasks.append(self._runner.run_async(page._fetch_contents))
-        results: list[FetchInfo] = await asyncio.gather(*tasks)
-        return dict(zip(self._pages.keys(), results))
-
-    @staticmethod
-    def _filter_updated_contents(
-        pages_fetch_info: Dict[int, FetchInfo],
-    ) -> Dict[int, FetchInfo]:
-        """Filter the fetched contents to only include pages the contents of
-        which have been updated.
-
-        Args:
-            pages_fetch_info (dict[int, FetchInfo]): Dictionary of fetched
-                contents, hashes, and update flags for each page.
-
-        Returns:
-            dict[int, FetchInfo]: Dictionary of updated pages and their fetch
-                info.
-        """
-        return {
-            page_id: page_fetch_info
-            for page_id, page_fetch_info in pages_fetch_info.items()
-            if page_fetch_info.is_updated
-        }
-
-    async def _parse_contents(
-        self, pages_fetch_info: Dict[int, FetchInfo]
-    ) -> Dict[int, List[Product]]:
-        """Parse the contents of all product pages in the hub and extract
-        product data.
-
-        Args:
-            pages_fetch_info (dict[int, FetchInfo]): Dictionary of fetched
-                contents, hashes, and update flags for each page.
-
-        Returns:
-            dict[int, list[Product]]: Dictionary of parsed product data for
-                each page.
-        """
-        tasks: list[asyncio.Future] = []
-        # for some reason, when multiprocessing is enabled, the runner
-        # fails to run the parsing function with run_safe=True (in this case
-        # it is wrapped in a safe runner function inside of the runner).
-        # Something is not pickable, but I don't know what it is.
-        run_safe = not isinstance(self._runner.executor, ProcessPoolExecutor)
-        for page_id, page_fetch_info in pages_fetch_info.items():
-            contents = page_fetch_info.contents or ''
-            func = self._pages[page_id]._parse_contents_blocking
-            task = self._runner.run_sync(
-                func, contents, run_safe=run_safe, run_blocking=False
-            )
-            tasks.append(task)
-        results: list[list[Product]] = [
-            result if isinstance(result, list) else []
-            for result in await asyncio.gather(*tasks, return_exceptions=True)
-        ]
-        return dict(zip(pages_fetch_info.keys(), results))
-
-    async def update_silently(self) -> None:
-        """Fetch the contents of all product pages in the hub, extract the
-        product data, and update the internal state of the pages without
-        triggering any event handlers.
-        """
-        pages_fetch_info = await self._fetch_contents()
-        pages_fetch_info = self._filter_updated_contents(pages_fetch_info)
-        pages_products = await self._parse_contents(pages_fetch_info)
-        for page_id, page_products in pages_products.items():
-            page = self._pages[page_id]
-            page_html_hash = pages_fetch_info[page_id].contents_hash
-            assert page_html_hash is not None, 'Invalid hash'
-            page._update_silently(page_html_hash, page_products)
-
     async def update(
-        self, await_handlers: bool = False, **kwargs: Any
+        self, silent: bool = False, await_handlers: bool = False, **kwargs: Any
     ) -> None:
         """Fetch the contents of all product pages in the hub, extract the
         product data, update the internal state of the pages, and trigger
         event handlers.
 
         Args:
-            await_handlers (bool, optional): If True, the method will wait for
-                all event handlers to complete execution. Defaults to False.
+            silent (bool, optional): If True, the product data is updated
+                without triggering any event handlers. Defaults to False.
+            await_handlers (bool, optional): If True, all event handlers are
+                awaited to complete execution. This parameter has no effect if
+                `silent` is True. Defaults to False.
             **kwargs (Any): Additional keyword arguments to pass to the event
-                handlers.
+                handlers. If the `silent` parameter is True, these arguments
+                are ignored.
         """
-        pages_fetch_info = await self._fetch_contents()
-        pages_fetch_info = self._filter_updated_contents(pages_fetch_info)
-        pages_products = await self._parse_contents(pages_fetch_info)
-        tasks: list[asyncio.Task] = []
-        for page_id, page_products in pages_products.items():
-            page = self._pages[page_id]
-            page_html_hash = pages_fetch_info[page_id].contents_hash
-            assert page_html_hash is not None, 'Invalid hash'
-            task = self._runner.run_async(
-                page._update,
-                page_html_hash,
-                page_products,
-                await_handlers,
-                **kwargs,
+        # fetch the HTML contents of all pages
+        fetch_tasks = [page._fetch_contents() for page in self._pages.values()]
+        fetch_results = await asyncio.gather(*fetch_tasks)
+        # filter the pages that have been updated
+        updated_pages = {
+            page: fetch_info
+            for page, fetch_info in zip(self._pages.values(), fetch_results)
+            if fetch_info.is_updated
+        }
+        # parse the contents of the pages that have been updated
+        parse_tasks = []
+        for page, fetch_info in updated_pages.items():
+            assert fetch_info.contents is not None, 'Invalid contents'
+            parse_tasks.append(page._parse_contents(fetch_info.contents))
+        parse_results = await asyncio.gather(*parse_tasks)
+        # update the internal state of the pages
+        update_tasks = []
+        for page, fetch_info, products in zip(
+            updated_pages.keys(), updated_pages.values(), parse_results
+        ):
+            assert fetch_info.contents_hash is not None, 'Invalid hash'
+            update_tasks.append(
+                page._update_products(
+                    products,
+                    fetch_info.contents_hash,
+                    silent,
+                    await_handlers,
+                    **kwargs,
+                )
             )
-            tasks.append(task)
-        await asyncio.gather(*tasks)
+        await asyncio.gather(*update_tasks)
 
     async def update_forever(
         self,
         interval: float = 10.0,
+        silent: bool = False,
         await_handlers: bool = False,
         **kwargs: Any,
     ) -> None:
@@ -1138,22 +1074,27 @@ class ProductPageHub:
 
         Args:
             interval (float, optional): The time interval in seconds between
-                updates. Defaults to 10.0.
-            await_handlers (bool, optional): If True, the method will wait for
-                all event handlers to complete execution. Defaults to False.
+                the updates. Defaults to 10 seconds.
+            silent (bool, optional): If True, the product data is updated
+                without triggering any event handlers. Defaults to False.
+            await_handlers (bool, optional): If True, all event handlers are
+                awaited to complete execution. This parameter has no effect if
+                `silent` is True. Defaults to False.
             **kwargs (Any): Additional keyword arguments to pass to the event
-                handlers.
+                handlers. If the `silent` parameter is True, these arguments
+                are ignored.
         """
         while True:
             try:
-                await self.update(await_handlers, **kwargs)
+                await self.update(silent, await_handlers, **kwargs)
             except asyncio.CancelledError:
                 break
             await asyncio.sleep(interval)
 
-    async def init_update_forever_tasks(
+    def init_update_forever_task(
         self,
         interval: float = 10.0,
+        silent: bool = False,
         await_handlers: bool = False,
         **kwargs: Any,
     ) -> asyncio.Task:
@@ -1168,32 +1109,28 @@ class ProductPageHub:
 
         Args:
             interval (float, optional): The time interval in seconds between
-                updates. Defaults to 10.0.
-            await_handlers (bool, optional): If True, the method will wait for
-                all event handlers to complete execution. Defaults to False.
+                the updates. Defaults to 10.0 seconds.
+            silent (bool, optional): If True, the product data is updated
+                without triggering any event handlers. Defaults to False.
+            await_handlers (bool, optional): If True, all event handlers are
+                awaited to complete execution. This parameter has no effect if
+                `silent` is True. Defaults to False.
             **kwargs (Any): Additional keyword arguments to pass to the event
-                handlers.
+                handlers. If the `silent` parameter is True, these arguments
+                are ignored.
         """
         task = self._update_forever_task
         if task is None or task.done():
             task = asyncio.create_task(
-                self.update_forever(interval, await_handlers, **kwargs)
+                self.update_forever(interval, silent, await_handlers, **kwargs)
             )
             self._update_forever_task = task
         return task
 
-    async def await_update_handlers(self) -> None:
-        """Wait for all event handlers to complete execution."""
-        tasks = [p.await_update_handlers() for p in self._pages.values()]
-        await asyncio.gather(*tasks)
-
-    async def cancel_update_handlers(self) -> None:
-        """Cancel all running event handlers."""
-        tasks = [p.cancel_update_handlers() for p in self._pages.values()]
-        await asyncio.gather(*tasks)
-
-    async def cancel_update_forever(self) -> None:
-        """Cancel the update forever task if it is running."""
+    async def cancel_update_forever_task(self) -> None:
+        """Cancel the update forever task of the hub. Note that the separate
+        update forever tasks of individual pages are not cancelled.
+        """
         if self._update_forever_task:
             task = self._update_forever_task
             task.cancel()
@@ -1202,3 +1139,11 @@ class ProductPageHub:
             except asyncio.CancelledError:
                 pass
             self._update_forever_task = None
+
+    async def await_update_handlers(self) -> None:
+        """Wait for all event handlers to complete execution."""
+        await self._runner.await_all()
+
+    async def cancel_update_handlers(self) -> None:
+        """Cancel all running event handlers."""
+        await self._runner.cancel_all()

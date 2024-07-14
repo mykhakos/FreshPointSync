@@ -7,7 +7,7 @@ import aiohttp
 import certifi
 
 logger = logging.getLogger('freshpointsync.client')
-"""Logger for the `freshpointsync.client` module."""
+"""Logger for the `freshpointsync.client` package."""
 
 
 TClient = TypeVar('TClient', bound='ProductDataFetchClient')

@@ -1,9 +1,9 @@
 Serializing Product Snapshots
 =============================
 
-As mentioned previously, product snapshots, being Pydantic models, can be easily
-serialized and deserialized. This is useful for storing snapshots in a database,
-or for sending them over the network.
+Product snapshots, being Pydantic models, can be easily serialized and
+deserialized. This is useful for sending product data over the network 
+or storing it in a database, for example.
 
 Serializing a Product Snapshot
 ------------------------------
@@ -57,6 +57,7 @@ This will output the following JSON string:
         "quantity": 4,
         "priceCurr": 40.26,
         "priceFull": 57.52,
+        "info": "Obsah balení: 140g",
         "picUrl": "",
         "locationId": 296,
         "location": "Elektroline"

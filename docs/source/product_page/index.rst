@@ -1,10 +1,11 @@
+.. _product-page-intro:
+
 Working with Product Pages
 ==========================
 
-A FreshPoint product page is represented by the ``ProductPage`` class. This
-class is used to fetch and store the data from the webpage. It provides methods
-for searching for products on the page, updating the data, and subscribing to
-product updates.
+A FreshPoint product page is represented by the ``ProductPage`` class. It is
+used to fetch and store the data from the webpage, subscribe to product updates,
+seach for products and filter them based on various criteria, and more.
 
 .. toctree::
    :maxdepth: 2

@@ -79,7 +79,7 @@ manager exits.
     the use case and the desired level of control over the object lifecycle.
 
     While the ``async with`` statement is more concise and convenient for
-    simple one-time use cases, manual session management may be more suitable
+    simple one-time use cases, manual session management may be suitable
     in more complex scenarios, such as when you need to reuse the object
     multiple times or store it as a class attribute.
 
@@ -159,8 +159,8 @@ and deserialization of the page data.
 In the example above, a ``ProductPageData`` object for location ID 296 is
 created from the serialized data stored in a cache file ``pageData_296.json``.
 A new ``ProductPage`` instance is created with this data. The page data is then
-updated, and the script prints whether the page has changed since the last
-update based on the value of MD5 hash of the page HTML contents. Finally,
+updated, and the script prints whether the page products have changed since the
+last update based on the value of MD5 hash of the page HTML contents. Finally,
 the updated data is serialized and stored back to the file.
 
 .. tip::

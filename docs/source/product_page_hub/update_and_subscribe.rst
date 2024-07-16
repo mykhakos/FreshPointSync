@@ -2,18 +2,15 @@
 Subscribing to Product Pages Updates
 ====================================
 
-The ``ProductPageHub`` class update and subscription logic is consistent with
-the ``ProductPage`` class. The main difference is that the hub manages multiple
-product pages simultaneously and performs bulk operations. The logic is thus
-covered here just briefly. For a detailed explanation, please refer to
-:ref:`Subscribing to Product Page Updates <product-page-subscribing-to-product-page-updates>`.
+The ``ProductPageHub`` class update and subscription logic manages multiple
+product pages simultaneously and performs bulk operations.
 
 Update and Subscription Logic
 -----------------------------
 
 ``ProductPageHub`` provides the ``update``, ``update_forever``, and
 ``init_update_task`` methods to fetch and update data for all managed product
-pages. Similarly, subscription to product updates is handled using
+pages. Subscription to product updates is handled using
 the ``subscribe_for_update`` and ``unsubscribe_for_update`` methods.
 
 .. note::
@@ -55,12 +52,18 @@ the hub.
     ``del_context`` does not raise an error if the key does not exist in the
     context.
 
-Complete Example
-----------------
+Case Study: Creating a Product Update Notifier
+----------------------------------------------
 
-Below is an example demonstrating how to use the ``ProductPageHub`` to manage
-multiple product pages, subscribe to updates, and handle them using custom
-handlers.
+Let's create a simple application that subscribes to product updates and prints
+the changes made to specific products. The application will run continuously
+until interrupted by the user.
+
+.. tip::
+
+    It makes sense to disable logging to the console when implementing a command
+    line application. If you decide to redirect the log messages to a file, make
+    sure to use the *append* mode to avoid overwriting and corrupting the file.
 
 .. code-block:: python
 
@@ -140,8 +143,7 @@ handlers.
 The example above demonstrates how to create a ``ProductPageHub``, set context
 data, subscribe to product update events, and handle these events using a custom
 handler. The handler prints the time of the update, the product name, the
-location, and the changes made to the product. The application will run
-continuously until interrupted by the user. The total number of updates is
+location, and the changes made to the product. The total number of updates is
 printed when the application exits.
 
 .. note::

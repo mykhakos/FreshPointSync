@@ -658,8 +658,8 @@ class ProductPageHub:
                 documentation for more information. Defaults to False.
         """
         self._client = client or ProductDataFetchClient()
-        self._data = data or ProductPageHubData()
-        self._pages: dict[int, ProductPage] = {
+        self._data = data or ProductPageHubData()  # {page_id: page_data}
+        self._pages: dict[int, ProductPage] = {  # {page_id: page_object}
             page_id: ProductPage(data=page_data, client=self._client)
             for page_id, page_data in self._data.pages.items()
         }

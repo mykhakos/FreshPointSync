@@ -2,9 +2,9 @@
 Managing Product Page Hubs
 ==========================
 
-API of the ``ProductPageHub`` is similar to the one of the ``ProductPage`` class.
-It can be used as an asynchronous context manager, provides methods for updating
-pages, subscribing to events in bulk, and data serialization.
+The ``ProductPageHub`` class implements the asynchronous context manager
+protocol and provides methods for updating pages, subscribing to events in bulk,
+and data serialization.
 
 Creating Product Page Hubs
 --------------------------
@@ -24,7 +24,13 @@ provided methods.
         try:
             await hub.start_session()
             print('Adding pages to the hub...')
+            await hub.new_page(location_id=122, fetch_contents=True)
             await hub.new_page(location_id=296, fetch_contents=True)
+            pages = ', '.join(
+                f"'{page.data.location}' (ID={page_id})"
+                for page_id, page in hub.pages.items()
+            )
+            print(f'Successfully added pages {pages} to the hub!')
         finally:
             print('Closing hub session...')
             await hub.close_session()
@@ -48,7 +54,13 @@ The same can be achieved using the asynchronous context manager.
         async with ProductPageHub() as hub:
             await hub.start_session()
             print('Adding pages to the hub...')
+            await hub.new_page(location_id=122, fetch_contents=True)
             await hub.new_page(location_id=296, fetch_contents=True)
+            pages = ', '.join(
+                f"'{page.data.location}' (ID={page_id})"
+                for page_id, page in hub.pages.items()
+            )
+            print(f'Successfully added pages {pages} to the hub!')
 
     if __name__ == '__main__':
         asyncio.run(main())
@@ -114,7 +126,7 @@ inclusive.
 
 .. code-block:: python
 
-    await hub.scan(start=10, stop=20, step=2)
+    await hub.scan(start=10, stop=20)
 
 The example above scans for pages with IDs from 10 to 20. The step parameter
 specifies the increment value between the IDs.

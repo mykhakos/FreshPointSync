@@ -1,6 +1,3 @@
-.. _product-page-subscribing-to-product-page-updates:
-
-
 ===================================
 Subscribing to Product Page Updates
 ===================================
@@ -90,7 +87,7 @@ regular intervals and updates the data accordingly.
     sure to set a reasonable update interval to avoid overloading the server.
 
 The ``init_update_task`` method is a simple convenience wrapper around
-``update_forever`` that creates a new ``asyncio`` task for the update process.
+``update_forever`` that creates a new asyncio task for the update process.
 This task can be later gracefully cancelled using
 the ``cancel_update_forever_task`` method.
 
@@ -136,7 +133,7 @@ Update Handlers
 
 A handler must be a synchronous callable or an asynchronous coroutine that
 accepts a single argument of type ``ProductUpdateContext``. The context contains
-the old and the new product data (if applicable for the update event) and
+the old and the new product data, if applicable for the update event, and
 the type of event that triggered the update. It can also be used to pass
 arbitrary data to the handlers. To do so, set the desired data as a key-value
 pair in the ``context`` mapping of the ``ProductPage`` instance.
@@ -183,6 +180,9 @@ second, which could correspond to some IO operation.
     attributes in your handlers with a simple ``if`` statement or ``assert`` or
     suppress the type-checking warning with ``# type: ignore``.
 
+    Context of a *create* event will contain only the new product data, while
+    the context of a *delete* event will contain only the old product data.
+
 If a handler is asynchronous, it inherently does not block the event loop. If,
 however, a handler is synchronous, it can be executed directly in a blocking
 manner or in a separate thread in a non-blocking manner. By default, synchronous
@@ -207,9 +207,11 @@ subscribe to product update events. It takes the following arguments:
 - ``call_safe``: A boolean flag that determines whether exceptions raised by
   the handler should be caught or propagated.
 - ``call_blocking``: A boolean flag that determines whether *synchronous*
-  handlers should be executed in a blocking manner, blocking the event loop.
+  handlers should be executed directly, blocking the event loop, or ran in a
+  separate thread or process, allowing the event loop to continue running.
 - ``handler_done_callback``: An optional synchronous function that will be
-  executed when the handler has finished processing the event.
+  executed when the handler has finished processing the event. It must accept
+  a single argument - the completed future object of the handler.
 
 .. code-block:: python
 

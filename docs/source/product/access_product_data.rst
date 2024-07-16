@@ -45,8 +45,8 @@ location with ID 296.
 .. tip::
 
     Try to create a snapshot of a different product with different properties.
-    Refer to ``pydantic`` documentation for more information on how to
-    instantiate a model.
+    Refer to Pydantic documentation for more information on how to instantiate
+    a model.
 
 Reading Product Name, Category, and Location
 --------------------------------------------
@@ -69,10 +69,10 @@ comparison and searching.
     and the ``category_lowercase_ascii`` property.
 
 
-Accessing Product Information
+Accessing Product Description
 -----------------------------
 The ``info`` attribute may contain additional information about the product,
-such as the weight, ingredients, nutrition facts, etc.
+such as its weight, ingredients, nutrition facts, description, etc.
 
 .. code-block:: python
 

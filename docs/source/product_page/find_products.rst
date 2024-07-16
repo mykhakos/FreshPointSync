@@ -2,9 +2,9 @@
 Finding Products on a Product Page
 ==================================
 
-Products on a product page can be searched using the ``find_product`` and
+Products on a product page can be searched for using the ``find_product`` and
 ``find_products`` methods of the ``ProductPage`` class. These methods allow
-you to search for products based on their attributes, properties, and custom
+you to filter products based on their attributes, properties, and custom
 constraints.
 
 The two methods differ in the number of products they return. ``find_product``
@@ -15,11 +15,15 @@ the specified criteria.
 Assuming we have a ``ProductPage`` instance named ``page``, let's explore how
 to search for products using the ``find_product`` and ``find_products`` methods.
 
-Searching using Attributes and Properties
+Searching Using Attributes and Properties
 -----------------------------------------
 
 Searching for a product with its attributes and properties is straightforward.
-For example, to search for a product by its name, use the ``name`` attribute:
+You can specify the attributes and properties you want to search for as keyword
+arguments in the method call.
+
+For example, to search for a product by its name, specify the ``name`` argument
+in a ``find_product`` method call:
 
 .. code-block:: python
 
@@ -29,19 +33,20 @@ For example, to search for a product by its name, use the ``name`` attribute:
     else:
         print(f'Harboe Cola quantity is {cola.quantity}.')
 
-This code searches for a product named "Harboe Cola" and prints its quantity if
-the product is found.
+This code snippet searches for a product named "Harboe Cola" and prints its
+quantity if the product is found.
 
 Or if, for example, you want to find all desserts that are currently available,
-you can use the ``category`` attribute and the ``is_available`` property:
+you can specify the ``category`` and the ``is_available`` arguments
+simultaneously in a single call to the ``find_products`` method:
 
 .. code-block:: python
 
-    desserts = page.find_products(category='Dezerty', is_available=True)
+    desserts = page.find_products(category='Dezerty, snídaně', is_available=True)
     print(f'{len(desserts)} desserts are currently available.')
 
-This code searches for all products in the "Dezerty" category that are currently
-available and prints the number of products found.
+This code snippet searches for all products in the "Dezerty, snídaně" category
+with  quantity greater than zero and prints the number of products found.
 
 .. warning::
 
@@ -68,7 +73,9 @@ Complete Example
             else:
                 print(f'Harboe Cola quantity is {cola.quantity}.')
 
-            desserts = page.find_products(category='Dezerty', is_available=True)
+            desserts = page.find_products(
+                category='Dezerty, snídaně', is_available=True
+                )
             print(f'{len(desserts)} desserts are currently available.')
 
     if __name__ == '__main__':
@@ -99,9 +106,8 @@ return a boolean value indicating whether the product matches the criteria.
         print('No sendvices available for less than 100 CZK.')
 
 In the example above, a ``lambda`` function is used to search for all products,
-the category of which contains the word "sendvice" (the matching is case-
-insensitive and ignores diacritics), that are available, and cost less than
-100 CZK.
+the category of which contains the word "sendvice" that are available and cost
+less than 100 CZK. The matching is case-insensitive and ignores diacritics.
 
 .. tip::
 
@@ -120,7 +126,7 @@ Complete Example
 
     async def main():
         async with ProductPage(location_id=296) as page:
-            await page.update_silently()
+            await page.update(silent=True)
 
             products = page.find_products(
                 constraint=lambda product: (

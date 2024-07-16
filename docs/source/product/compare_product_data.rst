@@ -85,8 +85,8 @@ and the product is no longer on sale.
 
 Comparing Product Quantity
 --------------------------
-We can analyze the stock changes with the `ProductQuantityUpdateInfo` object,
-which is returned by the `compare_quantity` method. It provides information on
+We can analyze the stock changes with the ``ProductQuantityUpdateInfo`` object,
+which is returned by the ``compare_quantity`` method. It provides information on
 whether the product quantity has decreased, if the product is out of stock, etc.
 
 .. code-block:: python
@@ -112,16 +112,18 @@ fields of another product instance to identify which fields differ between them.
     for field, diff_value in diff.items():
         print(f'{field}: {diff_value.value_self} -> {diff_value.value_other}')
 
-You can alter the returned dictionary by providing optional keyword arguments
-to the ``diff`` method. It accepts any argument that the ``model_dump`` method
-accepts. You can thus include and exclude certain fields from the comparison,
-pick the key format, and more.
-
 Each key in the dictionary a string representing an attribute name, and the
 value is a named tuple containing the differing values between the two products.
 The named tuple has two fields: ``value_self`` and ``value_other``, which
 represent the value of the attribute in the first and second product,
 respectively.
+
+.. tip::
+
+    You can alter the returned dictionary by providing optional keyword
+    arguments to the ``diff`` method. It accepts any arguments that the standard
+    Pydantic ``model_dump`` method accepts. You can thus include and exclude
+    certain fields from the comparison, pick the key format, and more.
 
 Complete Example
 ----------------

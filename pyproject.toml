@@ -1,6 +1,6 @@
 [project]
 name = "FreshPointSync"
-version = "0.2.0"
+version = "0.2.1"
 description = "FreshPoint webpage data parser and syncer."
 readme = "README.rst"
 license = { file = "LICENSE" }

@@ -20,7 +20,9 @@ logger = logging.getLogger('freshpointsync.client')
 
 
 class PageHTMLClient:
-    def __init__(self, *, retries: int = 3, **kwargs) -> None:  # noqa: ANN003
+    """Lightweight async client for fetching HTML pages."""
+
+    def __init__(self, *, retries: int = 3, **kwargs: Any) -> None:
         self._retries = retries
         self._client_kwargs = kwargs
         self._client: Optional[httpx.AsyncClient] = None
@@ -40,6 +42,11 @@ class PageHTMLClient:
     async def fetch(
         self, url: str, *, retries: Optional[int] = None, **kwargs: Any
     ) -> str:
+        """Fetch page contents with retry logic.
+
+        Args:
+            url: Target URL to fetch.
+        """
         if not self._client or self._client.is_closed:
             raise RuntimeError('HTTPX client is not initialized or already closed.')
         retries = retries if retries is not None else self._retries
@@ -80,3 +87,14 @@ class PageHTMLClient:
         if self._client and not self._client.is_closed:
             await self._client.aclose()
             self._client = None
+
+
+# Backwards compatibility -----------------------------------------------------
+
+ProductDataFetchClient = PageHTMLClient
+
+__all__ = [
+    'PageHTMLClient',
+    'ProductDataFetchClient',
+    'logger',
+]

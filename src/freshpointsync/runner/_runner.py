@@ -1,6 +1,7 @@
 import asyncio
 import inspect
 import logging
+import sys
 from concurrent.futures import Executor
 from functools import partial
 from typing import (
@@ -8,17 +9,51 @@ from typing import (
     Awaitable,
     Callable,
     Coroutine,
+    Iterable,
     Literal,
     Optional,
     TypeVar,
     Union,
 )
 
+if sys.version_info >= (3, 10):
+    from typing import ParamSpec
+else:
+    from typing_extensions import ParamSpec
+
 logger = logging.getLogger('freshpointsync.runner')
 """Logger for the `freshpointsync.runner` package."""
 
 
-T = TypeVar('T')
+P = ParamSpec('P')
+R = TypeVar('R')
+
+
+def run_safe(fn: Callable[P, R]) -> Callable[P, R]:
+    """Mark a function to be executed safely, meaning that any exceptions raised
+    during its execution will be caught and logged, and the result will
+    be set to None in case of an error.
+
+    Args:
+        fn (Callable[P, R]): The function to be marked as safe.
+
+    Returns:
+        Callable[P, R]: The original function marked with a special attribute.
+    """
+    setattr(fn, '_run_safe', True)  # noqa: B010
+    return fn
+
+
+def is_run_safe(fn: Callable[P, R]) -> bool:
+    """Check if a function is decorated with `@run_safe`.
+
+    Args:
+        fn (Callable[P, R]): The function to check.
+
+    Returns:
+        bool: True if the function is decorated with `@run_safe`, False otherwise.
+    """
+    return getattr(fn, '_run_safe', False)
 
 
 class CallableRunner:
@@ -109,9 +144,7 @@ class CallableRunner:
         """
         exc_type, exc_desc = type(exc).__name__, str(exc)
         if exc_desc:
-            logger.warning(
-                '%s "%s" failed (%s: %s)', type_, name, exc_type, exc_desc
-            )
+            logger.warning('%s "%s" failed (%s: %s)', type_, name, exc_type, exc_desc)
         else:
             logger.warning('%s "%s" failed (%s)', type_, name, exc_type)
 
@@ -137,18 +170,23 @@ class CallableRunner:
         except Exception:  # in case "inspect.iscoroutine" fails
             return repr(awaitable)
 
-    async def _run_async_safe(self, awaitable: Awaitable[T]) -> Optional[T]:
+    async def _run_async_safe(
+        self, func: Callable[..., Coroutine[Any, Any, R]], *args: Any
+    ) -> Optional[R]:
         """Wrap an awaitable in a coroutine with added error handling that
         catches and logs exceptions. Note that the `asyncio.CancelledError`
         exceptions are re-raised to propagate cancellation.
 
         Args:
-            awaitable (Awaitable[T]): The awaitable object to run.
+            func (Callable[..., Coroutine[Any, Any, T]]): The coroutine
+                function to run.
+            *args: Arguments to run the coroutine function with.
 
         Returns:
-            Optional[T]: The result of the awaitable if it completes
+            Optional[T]: The result of the coroutine function if it completes
                 successfully, `None` if an exception occurs.
         """
+        awaitable = func(*args)
         try:
             return await awaitable
         except asyncio.CancelledError:
@@ -160,11 +198,11 @@ class CallableRunner:
 
     def run_async(
         self,
-        func: Callable[..., Coroutine[Any, Any, T]],
+        func: Callable[..., Coroutine[Any, Any, R]],
         *func_args: Any,
         run_safe: bool = True,
         done_callback: Optional[Callable[[asyncio.Task], Any]] = None,
-    ) -> 'asyncio.Task[Optional[T]]':
+    ) -> 'asyncio.Task[Optional[R]]':
         """Schedule a function that returns a coroutine to be run,
         optionally with error handling and a completion callback.
 
@@ -195,7 +233,7 @@ class CallableRunner:
             run_safe,
         )
         if run_safe:
-            task = asyncio.create_task(self._run_async_safe(func(*func_args)))
+            task = asyncio.create_task(self._run_async_safe(func, *func_args))
         else:
             task = asyncio.create_task(func(*func_args))
         self.tasks.add(task)
@@ -208,7 +246,7 @@ class CallableRunner:
         return task
 
     @staticmethod
-    def _get_func_name(func: Callable[..., T]) -> str:
+    def _get_func_name(func: Callable) -> str:
         """Retrieve a human-readable name of a function.
 
         Args:
@@ -223,7 +261,7 @@ class CallableRunner:
         except AttributeError:
             return repr(func)
 
-    def _run_sync_safe(self, func: Callable[..., T], *args: Any) -> Optional[T]:
+    def _run_sync_safe(self, func: Callable[..., R], *args: Any) -> Optional[R]:
         """Call a synchronous function with added error handling that
         catches and logs exceptions. Note that the `asyncio.CancelledError`
         exceptions are re-raised to propagate cancellation.
@@ -247,12 +285,12 @@ class CallableRunner:
 
     def run_sync(
         self,
-        func: Callable[..., T],
+        func: Callable[..., R],
         *func_args: Any,
         run_safe: bool = True,
         run_blocking: bool = True,
         done_callback: Optional[Callable[[asyncio.Future], Any]] = None,
-    ) -> 'asyncio.Future[Optional[T]]':
+    ) -> 'asyncio.Future[Optional[R]]':
         """Schedule a synchronous function to be run in a blocking or
         a non-blocking manner, optionally with error handling and
         a completion callback.
@@ -291,7 +329,7 @@ class CallableRunner:
         # get the event loop, prepare for scheduling the future
         name = self._get_func_name(func)
         loop = asyncio.get_running_loop()
-        future: asyncio.Future[Optional[T]]
+        future: asyncio.Future[Optional[R]]
         # schedule the future based on the blocking mode
         logger.debug(
             'Scheduling future for "%s" (sync, blocking=%s, safe=%s)',
@@ -326,6 +364,19 @@ class CallableRunner:
             future.add_done_callback(done_callback)
         return future
 
+    @staticmethod
+    async def await_(futures: Iterable[asyncio.Future[Any]]) -> None:
+        logger.debug('Awaiting futures')
+        # convert to tuple in case the iterable is a generator
+        futures = tuple(futures)
+        try:
+            await asyncio.gather(*futures)
+        except Exception:
+            for future in futures:
+                future.cancel()
+            await asyncio.gather(*futures, return_exceptions=True)
+            raise
+
     async def await_all(self) -> None:
         """Wait for all scheduled asynchronous and synchronous tasks
         to complete.
@@ -340,11 +391,29 @@ class CallableRunner:
         the runner's state.
         """
         logger.debug('Awaiting all tasks and futures')
-        tasks = set(self.tasks)
-        futures = set(self.futures)
-        await asyncio.gather(*tasks, *futures)
+        await self.await_(self.tasks)
         self.tasks.clear()
+        await self.await_(self.futures)
         self.futures.clear()
+
+    @staticmethod
+    async def cancel(futures: Iterable[asyncio.Future[Any]]) -> None:
+        """Attempt to cancel a set of futures.
+
+        This method attempts to cancel the provided future-like objects.
+
+        Args:
+            futures (Iterable[asyncio.Future]): An iterable of futures to cancel.
+        """
+        logger.debug('Cancelling futures')
+        # convert to tuple in case the iterable is a generator
+        futures = tuple(futures)
+        # let the event loop run to allow for task cancellation
+        # (helps if "cancel" is called right after a task is created)
+        await asyncio.sleep(0)
+        for future in futures:
+            future.cancel()
+        await asyncio.gather(*futures, return_exceptions=True)
 
     async def cancel_all(self) -> None:
         """Attempt to cancel all active tasks and futures.
@@ -363,15 +432,7 @@ class CallableRunner:
         the cancellation of the futures is not guaranteed to be successful.
         """
         logger.debug('Cancelling all tasks and futures')
-        # let the event loop run to allow for task cancellation
-        # (helps if "cancel_all" is called right after a task is created)
-        await asyncio.sleep(0)
-        tasks = set(self.tasks)
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+        await self.cancel(self.tasks)
         self.tasks.clear()
-        futures = set(self.futures)
-        for future in futures:
-            if future.cancel():
-                self.futures.remove(future)
+        await self.cancel(self.futures)
+        self.futures.clear()

@@ -79,7 +79,7 @@ requires = ["setuptools>=61.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.ruff]
-line-length = 80
+line-length = 88
 indent-width = 4
 target-version = "py38"
 
@@ -108,6 +108,8 @@ ignore = [
   "PLR0915",
   # Ignore PEP 604 syntax suggestions, as they are not available in py38.
   "UP007",
+  # Discard suggestions on annotating with a more specific type than Any.
+  "ANN401",
 ]
 preview = true
 

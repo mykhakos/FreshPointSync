@@ -1,7 +1,8 @@
 import pytest
+
 from freshpointsync.client import ProductDataFetchClient
 from freshpointsync.page import (
-    ProductPage,
+    ProductPageClient,
     ProductPageData,
     ProductPageHub,
     ProductPageHubData,
@@ -44,12 +45,12 @@ class TestProductPageData:
 
 class TestProductPage:
     def test_page_created(self):
-        page = ProductPage(location_id=296)
+        page = ProductPageClient(location_id=296)
         assert page.data == ProductPageData(location_id=296)
 
     @pytest.mark.asyncio
     async def test_fetch(self):
-        async with ProductPage(location_id=296) as page:
+        async with ProductPageClient(location_id=296) as page:
             page_hash = page.data.html_hash
             products = await page.fetch()
             assert products and isinstance(products, list)
@@ -57,7 +58,7 @@ class TestProductPage:
 
     @pytest.mark.asyncio
     async def test_update(self):
-        async with ProductPage(location_id=296) as page:
+        async with ProductPageClient(location_id=296) as page:
             await page.update()
 
 
@@ -81,7 +82,7 @@ class TestProductPageHub:
             )
             # add new page with location_id 296
             page = await hub.new_page(location_id=296)
-            assert isinstance(page, ProductPage)
+            assert isinstance(page, ProductPageClient)
             assert page.data.location_id == 296
             assert page.data.location_id in hub.pages
             assert page in hub.pages.values()

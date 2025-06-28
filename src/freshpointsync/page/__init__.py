@@ -6,17 +6,14 @@ are also available in the top-level `freshpointsync` package for easier access.
 """
 
 from ._page import (
-    FetchInfo,
-    ProductPage,
-    ProductPageData,
-    ProductPageHub,
-    ProductPageHubData,
+    ProductPageClient,
+    # ProductPageHub,
     logger,
 )
 
 __all__ = [
     'FetchInfo',
-    'ProductPage',
+    'ProductPageClient',
     'ProductPageData',
     'ProductPageHub',
     'ProductPageHubData',

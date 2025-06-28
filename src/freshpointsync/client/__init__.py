@@ -2,6 +2,6 @@
 Freshpoint webpages. It is a part of the low-level API.
 """
 
-from ._client import ProductDataFetchClient, logger
+from ._client import PageHTMLClient, ProductDataFetchClient, logger
 
-__all__ = ['ProductDataFetchClient', 'logger']
+__all__ = ['PageHTMLClient', 'ProductDataFetchClient', 'logger']

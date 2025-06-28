@@ -42,18 +42,9 @@ class PageHTMLClient:
     async def fetch(
         self, url: str, *, retries: Optional[int] = None, **kwargs: Any
     ) -> str:
-        """Fetch page contents with retry logic.
-
-        Args:
-            url: Target URL to fetch.
-        """
         if not self._client or self._client.is_closed:
             raise RuntimeError('HTTPX client is not initialized or already closed.')
         retries = retries if retries is not None else self._retries
-
-        # TODO: remove this later, debugging only
-        with open('page.html', encoding='utf-8') as file:
-            return file.read()
 
         # Tenacity retry logic
         retry_strategy = AsyncRetrying(
@@ -91,14 +82,3 @@ class PageHTMLClient:
         if self._client and not self._client.is_closed:
             await self._client.aclose()
             self._client = None
-
-
-# Backwards compatibility -----------------------------------------------------
-
-ProductDataFetchClient = PageHTMLClient
-
-__all__ = [
-    'PageHTMLClient',
-    'ProductDataFetchClient',
-    'logger',
-]

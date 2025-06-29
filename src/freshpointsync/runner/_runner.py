@@ -14,6 +14,7 @@ from typing import (
     Optional,
     TypeVar,
     Union,
+    cast,
 )
 
 if sys.version_info >= (3, 10):
@@ -202,7 +203,7 @@ class CallableRunner:
         *func_args: Any,
         run_safe: bool = True,
         done_callback: Optional[Callable[[asyncio.Task], Any]] = None,
-    ) -> 'asyncio.Task[Optional[R]]':
+    ) -> asyncio.Task:
         """Schedule a function that returns a coroutine to be run,
         optionally with error handling and a completion callback.
 
@@ -290,7 +291,7 @@ class CallableRunner:
         run_safe: bool = True,
         run_blocking: bool = True,
         done_callback: Optional[Callable[[asyncio.Future], Any]] = None,
-    ) -> 'asyncio.Future[Optional[R]]':
+    ) -> asyncio.Future:
         """Schedule a synchronous function to be run in a blocking or
         a non-blocking manner, optionally with error handling and
         a completion callback.
@@ -363,6 +364,56 @@ class CallableRunner:
         if done_callback:
             future.add_done_callback(done_callback)
         return future
+
+    def run(
+        self,
+        func: Union[Callable[..., Coroutine[Any, Any, R]], Callable[..., R]],
+        *func_args: Any,
+        run_async: bool,
+        run_safe: bool = True,
+        run_blocking: bool = True,
+        done_callback: Optional[Callable[[asyncio.Future], Any]] = None,
+    ) -> asyncio.Future[Optional[R]]:
+        """Run a callable function, either synchronous or asynchronous,
+        with optional error handling and a completion callback.
+
+        Args:
+            func (Union[Callable[..., Coroutine[Any, Any, T]], Callable[..., T]]):
+                The function to be run, either synchronous or asynchronous.
+            *func_args (Any): The arguments to run the function with.
+            run_async (bool): If True, the function is run as an asynchronous
+                task. If False, the function is run as a synchronous future.
+            run_safe (bool): If True, the potential exceptions raised by
+                the function are caught and logged, and the result is set to
+                None in case of an error. If False, exceptions are propagated
+                and must be handled by the caller. Defaults to True.
+            run_blocking (bool): If True, the synchronous function is executed
+                in a blocking manner. If False, it is executed in a non-blocking
+                manner using an executor. Defaults to True.
+            done_callback (Optional[Callable[[asyncio.Future], Any]]):
+                An optional callback to be called when the future completes.
+
+        Returns:
+            asyncio.Future[Optional[R]]:
+                An asyncio task or future object representing the scheduled
+                execution of the function. The task or future can be awaited
+                to obtain the result of the function call or cancelled.
+        """
+        if run_async:
+            return self.run_async(
+                cast(Callable[..., Coroutine[Any, Any, R]], func),
+                *func_args,
+                run_safe=run_safe,
+                done_callback=done_callback,
+            )
+        else:
+            return self.run_sync(
+                cast(Callable[..., R], func),
+                *func_args,
+                run_safe=run_safe,
+                run_blocking=run_blocking,
+                done_callback=done_callback,
+            )
 
     @staticmethod
     async def await_(futures: Iterable[asyncio.Future[Any]]) -> None:

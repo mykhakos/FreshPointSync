@@ -8,7 +8,8 @@ from typing import Literal, Optional, Union
 from unittest.mock import AsyncMock, MagicMock, create_autospec
 
 import pytest
-from freshpointsync.runner import CallableRunner
+
+from freshpointsync._callable_runner import CallableRunner
 
 logger = logging.getLogger(__name__)
 
@@ -125,10 +126,10 @@ async def test_run_sync_with_params(runner: CallableRunner):
 
 @pytest.mark.asyncio
 async def test_await_all(runner: CallableRunner):
-    func1 = AsyncMock()
-    func2 = AsyncMock()
-    func3 = MagicMock()
-    func4 = MagicMock()
+    func1 = get_mock_func('async')
+    func2 = get_mock_func('async')
+    func3 = get_mock_func('sync')
+    func4 = get_mock_func('sync')
     task1 = runner.run_async(func1)
     task2 = runner.run_async(func2)
     task3 = runner.run_sync(func3)
@@ -147,9 +148,9 @@ async def test_await_all(runner: CallableRunner):
 @pytest.mark.asyncio
 async def test_await_all_exception_run_safe(runner: CallableRunner):
     func1 = get_mock_func('async')
-    func2 = get_mock_func('sync', raise_exception=True)
+    func2 = get_mock_func('async', raise_exception=True)
     task1 = runner.run_async(func1)
-    task2 = runner.run_sync(func2, run_safe=True)
+    task2 = runner.run_async(func2, run_safe=True)
     await runner.await_all()
     func1.assert_called_once()
     func2.assert_called_once()
@@ -161,10 +162,11 @@ async def test_await_all_exception_run_safe(runner: CallableRunner):
 
 @pytest.mark.asyncio
 async def test_await_all_exception_run_unsafe(runner: CallableRunner):
+    # sync that raises is discarded right away, so it's necessary to test with async
     func1 = get_mock_func('async')
-    func2 = get_mock_func('sync', raise_exception=True)
+    func2 = get_mock_func('async', raise_exception=True)
     task1 = runner.run_async(func1)
-    task2 = runner.run_sync(func2, run_blocking=False, run_safe=False)
+    task2 = runner.run_async(func2, run_safe=False)
     with pytest.raises(ValueError):
         await runner.await_all()
     func1.assert_called_once()
@@ -173,7 +175,7 @@ async def test_await_all_exception_run_unsafe(runner: CallableRunner):
     assert task2.done() is True
     assert task1.result() == 42
     with pytest.raises(ValueError):
-        assert task2.result() == 42
+        task2.result()
     # cleanup task1
     try:
         await task1

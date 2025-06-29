@@ -1,33 +1,24 @@
+import asyncio
+import functools
+import inspect
 import logging
 import sys
+from dataclasses import dataclass
 from typing import (
     Any,
+    Awaitable,
     Callable,
     Coroutine,
     Dict,
+    Generic,
     Iterable,
     List,
     Optional,
     Set,
-    Union,
-)
-
-if sys.version_info >= (3, 10):
-    from typing import TypeAlias
-else:
-    from typing_extensions import TypeAlias
-
-
-import functools
-import inspect
-import sys
-from dataclasses import dataclass
-from typing import (
-    Awaitable,
-    Generic,
     TypedDict,
     TypeGuard,
     TypeVar,
+    Union,
     get_type_hints,
     overload,
 )
@@ -36,12 +27,13 @@ from freshpointparser.models import BaseItem, BasePage
 from freshpointparser.models.annotations import DiffType, ModelDiff, ModelDiffMapping
 from typing_extensions import Unpack
 
-from ..runner._runner import CallableRunner, is_run_safe
+from ._callable_runner import CallableRunner, is_run_safe
 
 if sys.version_info >= (3, 10):
-    from typing import TypeGuard
+    from typing import TypeAlias, TypeGuard
 else:
-    from typing_extensions import TypeGuard
+    from typing_extensions import TypeAlias, TypeGuard
+
 
 logger = logging.getLogger('freshpointsync.update')
 
@@ -192,28 +184,12 @@ class PageUpdateContext(Generic[TPage]):
     context: dict[str, Any]
 
 
-ItemUpdateConsumerAsync: TypeAlias = Callable[
-    [ItemUpdateContext], Coroutine[Any, Any, T]
-]
-ItemUpdateConsumerSync: TypeAlias = Callable[[ItemUpdateContext], T]
-ItemUpdateConsumer = Union[ItemUpdateConsumerAsync[T], ItemUpdateConsumerSync[T]]
-ItemUpdateFilter = ItemUpdateConsumer[bool]
-ItemUpdateHandler = ItemUpdateConsumer[Any]
+UpdateConsumerAsync: TypeAlias = Callable[[object], Coroutine[Any, Any, T]]
+UpdateConsumerSync: TypeAlias = Callable[[object], T]
+UpdateConsumer: TypeAlias = Union[UpdateConsumerAsync[T], UpdateConsumerSync[T]]
 
-PageUpdateConsumerAsync: TypeAlias = Callable[
-    [PageUpdateContext], Coroutine[Any, Any, T]
-]
-PageUpdateConsumerSync: TypeAlias = Callable[[PageUpdateContext], T]
-PageUpdateConsumer = Union[PageUpdateConsumerAsync[T], PageUpdateConsumerSync[T]]
-PageUpdateFilter = PageUpdateConsumer[bool]
-PageUpdateHandler = PageUpdateConsumer[Any]
-
-# UpdateConsumer = Union[ItemUpdateConsumer[T], PageUpdateConsumer[T]]
-# Filter = Union[ItemUpdateFilter, PageUpdateFilter]
-# Handler = Union[ItemUpdateHandler, PageUpdateHandler]
-
-
-UpdateConsumer: TypeAlias = Callable[[object], Any]
+Filter = UpdateConsumer[bool]
+Handler = UpdateConsumer[Any]
 
 
 @dataclass
@@ -238,10 +214,10 @@ class UpdatePublisher:
 
     def __init__(self) -> None:
         self._runner = CallableRunner()
-        self._filters: Dict[UpdateConsumer, UpdateConsumerMeta] = {}
-        self._handlers: Dict[UpdateConsumer, UpdateConsumerMeta] = {}
-        self._handler_exec_params: Dict[UpdateConsumer, HandlerExecParams] = {}
-        self._handlers_to_filters: Dict[UpdateConsumer, Set[UpdateConsumer]] = {}
+        self._filters: Dict[Filter, UpdateConsumerMeta] = {}
+        self._handlers: Dict[Handler, UpdateConsumerMeta] = {}
+        self._handler_exec_params: Dict[Handler, HandlerExecParams] = {}
+        self._handlers_to_filters: Dict[Handler, Set[Filter]] = {}
 
     @staticmethod
     def _get_consumers_meta(
@@ -261,8 +237,8 @@ class UpdatePublisher:
 
     def subscribe(
         self,
-        handler: Union[UpdateConsumer, Iterable[UpdateConsumer]],
-        filter_: Union[UpdateConsumer, Iterable[UpdateConsumer], None] = None,
+        handler: Union[Handler, Iterable[Handler]],
+        filter_: Union[Filter, Iterable[Filter], None] = None,
         **kwargs: Unpack[HandlerExecParams],
     ) -> None:
         handlers = self._get_consumers_meta(handler)
@@ -278,7 +254,7 @@ class UpdatePublisher:
 
     def unsubscribe(
         self,
-        handler: Union[UpdateConsumer, Iterable[UpdateConsumer]],
+        handler: Union[Handler, Iterable[Handler]],
     ) -> None:
         handlers = self._get_consumers_meta(handler)
         if not handlers:  # nothing to unsubscribe
@@ -299,21 +275,18 @@ class UpdatePublisher:
                 self._filters.pop(fltr, None)
 
     async def post(self, update_context: object) -> None:
-        fltr_futures: Dict[UpdateConsumer, Awaitable[Optional[bool]]] = {}
-        for fltr, meta in self._filters.items():
-            if meta.is_async:
-                fut = self._runner.run_async(
-                    fltr, update_context, run_safe=meta.run_safe
-                )  # type: ignore
-            else:
-                fut = self._runner.run_sync(
-                    fltr, update_context, run_safe=meta.run_safe
-                )
-            fltr_futures[fltr] = fut  # type: ignore
-
+        fltr_futures: Dict[UpdateConsumer, asyncio.Future[Optional[bool]]] = {}
         fltr_results: Dict[UpdateConsumer, Optional[bool]] = {}
+        for fltr, meta in self._filters.items():
+            fut = self._runner.run(
+                fltr,
+                update_context,
+                run_async=meta.is_async,
+                run_safe=meta.run_safe,
+            )
+            fltr_futures[fltr] = fut
 
-        hdlr_futures_to_await: List[Awaitable[Any]] = []
+        hdlr_futures_to_await: List[asyncio.Future[Any]] = []
         hdlrs_to_unsubscribe = set()
         for hdlr, meta in self._handlers.items():
             fltrs_passed = True
@@ -328,22 +301,14 @@ class UpdatePublisher:
 
             if fltrs_passed:
                 hdlr_exec_params = self._handler_exec_params[hdlr]
-
-                if meta.is_async:
-                    hdlr_task = self._runner.run_async(
-                        hdlr,
-                        update_context,
-                        run_safe=meta.run_safe,
-                    )
-                else:
-                    hdlr_task = self._runner.run_sync(
-                        hdlr,
-                        update_context,
-                        run_safe=meta.run_safe,
-                    )
-
+                hdlr_fut = self._runner.run(
+                    hdlr,
+                    update_context,
+                    run_async=meta.is_async,
+                    run_safe=meta.run_safe,
+                )
                 if hdlr_exec_params.get('await_for', False):
-                    hdlr_futures_to_await.append(hdlr_task)
+                    hdlr_futures_to_await.append(hdlr_fut)
                 if hdlr_exec_params.get('run_once', False):
                     hdlrs_to_unsubscribe.add(hdlr)
 
@@ -353,8 +318,3 @@ class UpdatePublisher:
             await self._runner.await_(hdlr_futures_to_await)
         finally:
             await self._runner.cancel(fltr_futures.values())  # cancel unused filters
-
-
-# TODO: Consider checking handlers and filters signatures (not likely)
-# TODO: Implement ItemCacheUpdater
-# TODO: Add 'history' for product page class

@@ -40,28 +40,9 @@ Start by creating a `ProductPage` instance with a location ID and calling
 Explore `freshpointsync` documentation for more details and examples.
 """
 
-from ._logging import logger
-
-__all__ = ['logger']
-from . import client, page, update
-from .page import (
-    ProductPageClient,
-    # ProductPageHub,
-)
-from .update import is_valid_handler
+from ._page_client import LocationPage, ProductPage
 
 __all__ = [
-    'Product',
-    'ProductPageClient',
-    'ProductPageData',
-    'ProductPageHub',
-    'ProductPageHubData',
-    'ProductUpdateEvent',
-    'client',
-    'is_valid_handler',
-    'logger',
-    'page',
-    'parser',
-    'product',
-    'update',
+    'LocationPage',
+    'ProductPage',
 ]

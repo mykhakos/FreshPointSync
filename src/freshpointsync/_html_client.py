@@ -46,6 +46,10 @@ class PageHTMLClient:
             raise RuntimeError('HTTPX client is not initialized or already closed.')
         retries = retries if retries is not None else self._retries
 
+        # # TODO: remove this later, debugging only
+        # with open('page.html', encoding='utf-8') as file:
+        #     return file.read()
+
         # Tenacity retry logic
         retry_strategy = AsyncRetrying(
             retry=retry_if_exception_type((
@@ -60,8 +64,8 @@ class PageHTMLClient:
         async for attempt in retry_strategy:
             with attempt:
                 logger.info(
-                    f"Fetching HTML content from '{url}', "
-                    f'attempt {attempt.retry_state.attempt_number}'
+                    f"Fetching HTML content from '{url}' "
+                    f'(attempt {attempt.retry_state.attempt_number} of {retries})'
                 )
                 response = await self._client.get(url, **kwargs)
                 response.raise_for_status()

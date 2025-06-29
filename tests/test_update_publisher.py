@@ -5,12 +5,9 @@ from typing import Literal, Union
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from freshpointsync.product import Product
-from freshpointsync.update import (
-    ProductUpdateContext,
-    ProductUpdateEvent,
-    ProductUpdateEventPublisher,
-)
+from freshpointparser.models import Product
+
+from freshpointsync._update_publisher import UpdatePublisher
 
 
 def new_handler(
@@ -42,7 +39,7 @@ def handler_callback(fut):
 
 
 def test_subscribe_sync(sync_handler):
-    publisher = ProductUpdateEventPublisher()
+    publisher = UpdatePublisher()
     event = ProductUpdateEvent.PRODUCT_ADDED
     publisher.subscribe(sync_handler, event)
     assert event not in publisher.async_subscribers
@@ -61,7 +58,7 @@ def test_subscribe_sync(sync_handler):
     ),
 )
 def test_subscribe_async(async_handler):
-    publisher = ProductUpdateEventPublisher()
+    publisher = UpdatePublisher()
     event = ProductUpdateEvent.PRODUCT_ADDED
     publisher.subscribe(async_handler, event)
     assert event not in publisher.sync_subscribers
@@ -73,7 +70,7 @@ def test_subscribe_async(async_handler):
 
 
 def test_subscribe_with_params(sync_handler):
-    publisher = ProductUpdateEventPublisher()
+    publisher = UpdatePublisher()
     event = ProductUpdateEvent.PRODUCT_ADDED
     publisher.subscribe(
         sync_handler,
@@ -90,7 +87,7 @@ def test_subscribe_with_params(sync_handler):
 
 
 def test_subscribe_same_twice(sync_handler):
-    publisher = ProductUpdateEventPublisher()
+    publisher = UpdatePublisher()
     publisher.subscribe(sync_handler, ProductUpdateEvent.PRODUCT_ADDED)
     publisher.subscribe(sync_handler, ProductUpdateEvent.PRODUCT_ADDED)
     subscribers = publisher.sync_subscribers[ProductUpdateEvent.PRODUCT_ADDED]
@@ -98,7 +95,7 @@ def test_subscribe_same_twice(sync_handler):
 
 
 def test_is_subscribed(sync_handler):
-    publisher = ProductUpdateEventPublisher()
+    publisher = UpdatePublisher()
     event = ProductUpdateEvent.PRODUCT_ADDED
     assert publisher.is_subscribed(event=event) is False
     publisher.subscribe(sync_handler, event)
@@ -106,7 +103,7 @@ def test_is_subscribed(sync_handler):
 
 
 def test_unsubscribe_subscribed(async_handler):
-    publisher = ProductUpdateEventPublisher()
+    publisher = UpdatePublisher()
     event = ProductUpdateEvent.PRODUCT_ADDED
     assert event not in publisher.async_subscribers
     assert publisher.is_subscribed(event=event) is False
@@ -117,7 +114,7 @@ def test_unsubscribe_subscribed(async_handler):
 
 
 def test_unsubscribe_unsubscribed(async_handler):
-    publisher = ProductUpdateEventPublisher()
+    publisher = UpdatePublisher()
     event = ProductUpdateEvent.PRODUCT_ADDED
     assert event not in publisher.async_subscribers
     assert publisher.is_subscribed(event=event) is False
@@ -127,7 +124,7 @@ def test_unsubscribe_unsubscribed(async_handler):
 
 
 def test_unsubscribe_all():
-    publisher = ProductUpdateEventPublisher()
+    publisher = UpdatePublisher()
     event = ProductUpdateEvent.PRODUCT_ADDED
     publisher.subscribe(new_handler('async'), event)
     publisher.subscribe(new_handler('async'), event)
@@ -139,7 +136,7 @@ def test_unsubscribe_all():
 
 
 def test_unsubscribe_all_empty():
-    publisher = ProductUpdateEventPublisher()
+    publisher = UpdatePublisher()
     event = ProductUpdateEvent.PRODUCT_ADDED
     assert publisher.is_subscribed(event=event) is False
     publisher.unsubscribe(None, event)
@@ -148,7 +145,7 @@ def test_unsubscribe_all_empty():
 
 @pytest.mark.asyncio
 async def test_subscribe_and_post_and_unsubscribe(async_handler):  # noqa: RUF029
-    publisher = ProductUpdateEventPublisher()
+    publisher = UpdatePublisher()
     event = ProductUpdateEvent.PRODUCT_ADDED
     publisher.subscribe(async_handler, event)
     product_new = Product(id_=123, name='foo')
@@ -163,14 +160,14 @@ async def test_subscribe_and_post_and_unsubscribe(async_handler):  # noqa: RUF02
 
 @pytest.mark.asyncio
 async def test_post_no_subcriptions():  # noqa: RUF029
-    publisher = ProductUpdateEventPublisher()
+    publisher = UpdatePublisher()
     publisher.post(ProductUpdateEvent.PRODUCT_ADDED, None, None)
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('handler', [new_handler('async'), new_handler('sync')])
 async def test_subscribe_one_to_one_and_post_other(handler):  # noqa: RUF029
-    publisher = ProductUpdateEventPublisher()
+    publisher = UpdatePublisher()
     publisher.subscribe(handler, ProductUpdateEvent.PRODUCT_ADDED)
     publisher.post(ProductUpdateEvent.PRODUCT_REMOVED, None, None)
     handler.assert_not_called()
@@ -179,7 +176,7 @@ async def test_subscribe_one_to_one_and_post_other(handler):  # noqa: RUF029
 @pytest.mark.asyncio
 @pytest.mark.parametrize('handler', [new_handler('async'), new_handler('sync')])
 async def test_subscribe_one_to_one_and_post_once(handler):  # noqa: RUF029
-    publisher = ProductUpdateEventPublisher()
+    publisher = UpdatePublisher()
     publisher.subscribe(handler, ProductUpdateEvent.PRODUCT_ADDED)
     product_new = Product(id_=123, name='foo')
     product_old = None
@@ -198,7 +195,7 @@ async def test_subscribe_one_to_one_and_post_once(handler):  # noqa: RUF029
 @pytest.mark.asyncio
 @pytest.mark.parametrize('handler', [new_handler('async'), new_handler('sync')])
 async def test_subscribe_one_to_one_and_post_twice(handler):
-    publisher = ProductUpdateEventPublisher()
+    publisher = UpdatePublisher()
     publisher.subscribe(handler, ProductUpdateEvent.PRODUCT_ADDED)
     product_new = Product(id_=123, name='foo')
     product_old = None
@@ -222,7 +219,7 @@ async def test_subscribe_one_to_one_and_post_twice(handler):
 @pytest.mark.asyncio
 @pytest.mark.parametrize('handler', [new_handler('async'), new_handler('sync')])
 async def test_subscribe_one_to_multiple_and_post_each_once(handler):
-    publisher = ProductUpdateEventPublisher()
+    publisher = UpdatePublisher()
     publisher.subscribe(handler, ProductUpdateEvent.PRODUCT_ADDED)
     publisher.subscribe(handler, ProductUpdateEvent.PRODUCT_REMOVED)
     product_new = Product(id_=123, name='foo')
@@ -235,7 +232,7 @@ async def test_subscribe_one_to_multiple_and_post_each_once(handler):
 
 @pytest.mark.asyncio
 async def test_subscribe_multiple_to_multiple_and_post_multiple():
-    publisher = ProductUpdateEventPublisher()
+    publisher = UpdatePublisher()
     handler_1 = new_handler('async')
     handler_2 = new_handler('async')
     handler_3 = new_handler('async')
@@ -244,12 +241,8 @@ async def test_subscribe_multiple_to_multiple_and_post_multiple():
     publisher.subscribe(handler_2, ProductUpdateEvent.PRICE_UPDATED)
     publisher.subscribe(handler_3, ProductUpdateEvent.QUANTITY_UPDATED)
     publisher.subscribe(handler_4, ProductUpdateEvent.OTHER_UPDATED)
-    product_new = Product(
-        id_=123, name='foo', quantity=1, price_full=90, price_curr=90
-    )
-    product_old = Product(
-        id_=123, name='foo', quantity=2, price_full=80, price_curr=70
-    )
+    product_new = Product(id_=123, name='foo', quantity=1, price_full=90, price_curr=90)
+    product_old = Product(id_=123, name='foo', quantity=2, price_full=80, price_curr=70)
     events = [
         ProductUpdateEvent.PRODUCT_UPDATED,
         ProductUpdateEvent.PRICE_UPDATED,

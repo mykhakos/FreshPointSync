@@ -25,9 +25,9 @@ from freshpointparser.parsers import (
 from pydantic import BaseModel, ConfigDict, Field  # noqa
 from pydantic.alias_generators import to_camel  # noqa
 
-from ..client._client import PageHTMLClient
-from ..runner._runner import CallableRunner
-from ..update._update import ItemUpdateContext, PageUpdateContext, UpdatePublisher
+from ._callable_runner import CallableRunner
+from ._html_client import PageHTMLClient
+from ._update_publisher import ItemUpdateContext, PageUpdateContext, UpdatePublisher
 
 if sys.version_info >= (3, 11):
     from typing import Self

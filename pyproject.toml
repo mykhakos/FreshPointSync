@@ -115,8 +115,8 @@ preview = true
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = [
-  "D100", "D101", "D102", "D103", "D104", "S101", "S106", "ANN001", "ANN002",
-  "ANN003", "ANN201", "ANN202", "ANN204", "ANN205", "PLR6301",
+  "D", "S106", "ANN001", "ANN002",
+  "ANN003", "ANN201", "ANN202", "ANN204", "ANN205", "PLR6301", "PLC2701"
 ]
 "docs/source/conf.py" = ["D100", "D103", "A001", "ANN201", "ANN001"]
 

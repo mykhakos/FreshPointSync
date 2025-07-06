@@ -2,11 +2,10 @@ import asyncio
 import logging
 import sys
 from abc import ABC, abstractmethod
-from concurrent.futures import ProcessPoolExecutor  # noqa
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from typing import (
     Any,
-    Callable,
     Dict,
     Generic,
     Optional,
@@ -22,12 +21,16 @@ from freshpointparser.parsers import (
     LocationPageHTMLParser,
     ProductPageHTMLParser,
 )
-from pydantic import BaseModel, ConfigDict, Field  # noqa
-from pydantic.alias_generators import to_camel  # noqa
 
 from ._callable_runner import CallableRunner
 from ._html_client import PageHTMLClient
-from ._update_publisher import ItemUpdateContext, PageUpdateContext, UpdatePublisher
+from ._update_publisher import (
+    Filter,
+    Handler,
+    ItemUpdateContext,
+    PageUpdateContext,
+    UpdatePublisher,
+)
 
 if sys.version_info >= (3, 11):
     from typing import Self
@@ -127,7 +130,7 @@ class BasePageClient(ABC, Generic[TPageHTMLParser, TPage]):
         return ParseResult(
             page_old=page_old,
             page_new=self._parser.page,
-            parsed=parser.parse_status,
+            parsed=self._parser.parse_status,
         )
 
     async def _post(
@@ -144,7 +147,7 @@ class BasePageClient(ABC, Generic[TPageHTMLParser, TPage]):
             page_diff=page_diff,
             context={**self._update_context, **kwargs},
         )
-        tasks = [asyncio.create_task(self._publisher_page.post(page_update_context))]
+        tasks = [self._runner.run_async(self._publisher_page.post, page_update_context)]
         for item_id in page_diff:
             item_new = page_new.items.get(item_id)
             item_old = page_old.items.get(item_id)
@@ -155,7 +158,9 @@ class BasePageClient(ABC, Generic[TPageHTMLParser, TPage]):
                 item_diff=item_diff,
                 context={**self._update_context, **kwargs},
             )
-            task = asyncio.create_task(self._publisher_items.post(item_update_context))
+            task = self._runner.run_async(
+                self._publisher_items.post, item_update_context
+            )
             tasks.append(task)
         if await_handlers:
             await self._runner.await_(tasks)
@@ -173,38 +178,31 @@ class BasePageClient(ABC, Generic[TPageHTMLParser, TPage]):
     async def start_session(self) -> None:
         self._client.start_session()
 
-    async def close_session(self) -> None:
+    async def close_session(self, await_update_handlers: bool = True) -> None:
         """Close the aiohttp client session if one is open."""
+        if await_update_handlers:
+            await self.await_update_handlers()
+        else:
+            await self.cancel_update_handlers()
         await self._client.close_session()
-        await self.cancel_update_handlers()
         if self._runner.executor:
             self._runner.executor.shutdown(wait=True)
 
     def subscribe_for_item_update(
-        self,
-        handler: Callable,
-        filter_: Callable,
+        self, handler: Handler, filter_: Optional[Filter] = None
     ) -> None:
         self._publisher_items.subscribe(handler, filter_)
 
-    def unsubscribe_from_item_update(
-        self,
-        handler: Callable,
-    ) -> None:
+    def unsubscribe_from_item_update(self, handler: Handler) -> None:
         self._publisher_items.unsubscribe(handler)
 
     def subscribe_for_page_update(
-        self,
-        handler: Callable,
-        filter_: Callable,
+        self, handler: Handler, filter_: Optional[Filter] = None
     ) -> None:
         """Subscribe to page update events."""
         self._publisher_page.subscribe(handler, filter_)
 
-    def unsubscribe_from_page_update(
-        self,
-        handler: Callable,
-    ) -> None:
+    def unsubscribe_from_page_update(self, handler: Handler) -> None:
         """Unsubscribe from page update events."""
         self._publisher_page.unsubscribe(handler)
 
@@ -236,8 +234,9 @@ class BasePageClient(ABC, Generic[TPageHTMLParser, TPage]):
         parse_result = await self._parse_content(content, force)
         if silent or not parse_result.parsed:
             return
-        if not parse_result.page_new or not parse_result.page_old:
-            return  # should not happen (guarded by parse_result.parsed)
+        # should not happen - guarded by parse_result.parsed
+        assert parse_result.page_new is not None, 'New parsed page cannot be None'
+        assert parse_result.page_old is not None, 'Old parsed page cannot be None'
         await self._post(
             parse_result.page_new,
             parse_result.page_old,
@@ -261,6 +260,8 @@ class BasePageClient(ABC, Generic[TPageHTMLParser, TPage]):
         Args:
             interval (float, optional): The time interval in seconds between
                 updates. Defaults to 10.0.
+            force (bool, optional): If True, the content is parsed even if
+                the product data has not changed. Defaults to False.
             silent (bool, optional): If True, the product data is updated
                 without triggering any event handlers. Defaults to False.
             await_handlers (bool, optional): If True, all event handlers are
@@ -317,16 +318,20 @@ class LocationPageClient(BasePageClient[LocationPageHTMLParser, LocationPage]):
         return get_location_page_url()
 
 
-class BasePageHub(Generic[TPageHTMLParser, TPage]):
-    """Base class for a page hub that manages multiple product pages."""
-
-    def __init__(self, **client_kwargs: Any) -> None:
+class PageClientGroup:
+    def __init__(
+        self, *, use_multiprocessing: bool = False, **client_kwargs: Any
+    ) -> None:
         self._client = PageHTMLClient(**client_kwargs)
         self._update_context: dict[Any, Any] = {}
         self._publisher_page = UpdatePublisher()
         self._publisher_items = UpdatePublisher()
-        self._runner = CallableRunner()
-        self._pages: Dict[str, BasePageClient[TPageHTMLParser, TPage]] = {}
+        self._pages: Dict[str, BasePageClient] = {}
+        if use_multiprocessing:
+            executor = ProcessPoolExecutor(max_workers=None)
+            self._runner = CallableRunner(executor=executor)
+        else:
+            self._runner = CallableRunner()
 
     async def __aenter__(self) -> Self:
         """Asynchronous context manager entry."""
@@ -342,8 +347,121 @@ class BasePageHub(Generic[TPageHTMLParser, TPage]):
         """Asynchronous context manager exit."""
         await self.close_session()
 
+    async def _group_item_update_proxy(self, context: ItemUpdateContext) -> None:
+        """Proxy method to post item update events."""
+        await self._runner.run_async(self._publisher_items.post, context)
+
+    async def _group_page_update_proxy(self, context: PageUpdateContext) -> None:
+        """Proxy method to post page update events."""
+        await self._runner.run_async(self._publisher_page.post, context)
+
+    @property
+    def update_context(self) -> Dict[Any, Any]:
+        """Update context passed to event handlers."""
+        return self._update_context
+
     async def start_session(self) -> None:
         self._client.start_session()
 
-    async def close_session(self) -> None:
+    async def close_session(self, await_update_handlers: bool = True) -> None:
+        if await_update_handlers:
+            await self.await_update_handlers()
+        else:
+            await self.cancel_update_handlers()
+        for page in self._pages.values():
+            await self.remove_page(page, await_update_handlers)
         await self._client.close_session()
+        if self._runner.executor:
+            self._runner.executor.shutdown()
+
+    def subscribe_for_item_update(
+        self, handler: Handler, filter_: Optional[Filter] = None
+    ) -> None:
+        self._publisher_items.subscribe(handler, filter_)
+
+    def unsubscribe_from_item_update(self, handler: Handler) -> None:
+        self._publisher_items.unsubscribe(handler)
+
+    def subscribe_for_page_update(
+        self, handler: Handler, filter_: Optional[Filter] = None
+    ) -> None:
+        """Subscribe to page update events."""
+        self._publisher_page.subscribe(handler, filter_)
+
+    def unsubscribe_from_page_update(self, handler: Handler) -> None:
+        """Unsubscribe from page update events."""
+        self._publisher_page.unsubscribe(handler)
+
+    async def add_page(self, page: BasePageClient) -> None:
+        """Add a page to the group."""
+        page_url = page._construct_page_url()
+        if page_url in self._pages:
+            logger.warning('Page %s already exists in the group.', page_url)
+            return
+        logger.info('Adding page %s to the group.', page_url)
+        await page.close_session()
+        page._client = self._client
+        page._runner = self._runner
+        page.subscribe_for_item_update(handler=self._group_item_update_proxy)
+        page.subscribe_for_page_update(handler=self._group_page_update_proxy)
+        self._pages[page_url] = page
+
+    async def remove_page(
+        self, page: BasePageClient, await_update_handlers: bool = True
+    ) -> None:
+        """Remove a page from the group."""
+        page_url = page._construct_page_url()
+        if page_url not in self._pages:
+            logger.warning('Page %s does not exist in the group.', page_url)
+            return
+        logger.info('Removing page %s from the group.', page_url)
+        if await_update_handlers:
+            await page.await_update_handlers()
+        else:
+            await page.cancel_update_handlers()
+        self._pages.pop(page_url)
+        page.unsubscribe_from_item_update(self._group_item_update_proxy)
+        page.unsubscribe_from_page_update(self._group_page_update_proxy)
+        page._client = PageHTMLClient()
+        page._runner = CallableRunner()
+
+    def get_page(self, page_url: str) -> Optional[BasePageClient]:
+        """Get a page by its URL."""
+        return self._pages.get(page_url)
+
+    async def update_all(
+        self,
+        force: bool = False,
+        silent: bool = False,
+        await_handlers: bool = False,
+        **kwargs: Any,
+    ) -> None:
+        update_tasks = [
+            self._runner.run_async(page.update, force, silent, await_handlers, **kwargs)
+            for page in self._pages.values()
+        ]
+        await self._runner.await_(update_tasks)
+
+    async def update_all_forever(
+        self,
+        interval: float = 10.0,
+        force: bool = False,
+        silent: bool = False,
+        await_handlers: bool = False,
+        **kwargs: Any,
+    ) -> None:
+        """Update all pages at regular intervals."""
+        while True:
+            try:
+                await self.update_all(force, silent, await_handlers, **kwargs)
+            except asyncio.CancelledError:
+                break
+            await asyncio.sleep(interval)
+
+    async def await_update_handlers(self) -> None:
+        """Wait for all event handlers to complete execution."""
+        await self._runner.await_all()
+
+    async def cancel_update_handlers(self) -> None:
+        """Cancel all running event handlers."""
+        await self._runner.cancel_all()

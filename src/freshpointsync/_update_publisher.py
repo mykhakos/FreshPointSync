@@ -184,8 +184,8 @@ class PageUpdateContext(Generic[TPage]):
     context: dict[str, Any]
 
 
-UpdateConsumerAsync: TypeAlias = Callable[[object], Coroutine[Any, Any, T]]
-UpdateConsumerSync: TypeAlias = Callable[[object], T]
+UpdateConsumerAsync: TypeAlias = Callable[[Any], Coroutine[Any, Any, T]]
+UpdateConsumerSync: TypeAlias = Callable[[Any], T]
 UpdateConsumer: TypeAlias = Union[UpdateConsumerAsync[T], UpdateConsumerSync[T]]
 
 Filter = UpdateConsumer[bool]

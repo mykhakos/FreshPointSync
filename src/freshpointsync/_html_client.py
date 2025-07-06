@@ -16,7 +16,7 @@ else:
     from typing_extensions import Self
 
 
-logger = logging.getLogger('freshpointsync.client')
+logger = logging.getLogger('freshpointsync.html_client')
 
 
 class PageHTMLClient:
@@ -26,6 +26,16 @@ class PageHTMLClient:
         self._retries = retries
         self._client_kwargs = kwargs
         self._client: Optional[httpx.AsyncClient] = None
+
+    def __del__(self) -> None:
+        """Issue a warning if the client is not closed properly on deletion."""
+        if self._client and not self._client.is_closed:
+            logger.warning(
+                'PageHTMLClient instance is being deleted without closing '
+                'the HTTPX client. This may lead to resource leaks. Use '
+                '"async with PageHTMLClient() as client: " or call '
+                '"await client.close_session()" explicitly to ensure proper cleanup.'
+            )
 
     async def __aenter__(self) -> Self:
         self.start_session()
@@ -46,9 +56,10 @@ class PageHTMLClient:
             raise RuntimeError('HTTPX client is not initialized or already closed.')
         retries = retries if retries is not None else self._retries
 
-        # # TODO: remove this later, debugging only
-        # with open('page.html', encoding='utf-8') as file:
-        #     return file.read()
+        # TODO: remove this later, debugging only
+        logger.info(f"Fetching HTML content from '{url}' with {retries} retries.")
+        with open('page.html', encoding='utf-8') as file:
+            return file.read()
 
         # Tenacity retry logic
         retry_strategy = AsyncRetrying(

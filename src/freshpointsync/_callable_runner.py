@@ -415,17 +415,14 @@ class CallableRunner:
                 done_callback=done_callback,
             )
 
-    @staticmethod
-    async def await_(futures: Iterable[asyncio.Future[Any]]) -> None:
+    async def await_(self, futures: Iterable[Awaitable[Any]]) -> None:
         logger.debug('Awaiting futures')
         # convert to tuple in case the iterable is a generator
         futures = tuple(futures)
         try:
             await asyncio.gather(*futures)
         except Exception:
-            for future in futures:
-                future.cancel()
-            await asyncio.gather(*futures, return_exceptions=True)
+            await self.cancel(futures)
             raise
 
     async def await_all(self) -> None:
@@ -447,14 +444,13 @@ class CallableRunner:
         await self.await_(self.futures)
         self.futures.clear()
 
-    @staticmethod
-    async def cancel(futures: Iterable[asyncio.Future[Any]]) -> None:
+    async def cancel(self, futures: Iterable[Awaitable[Any]]) -> None:  # noqa: PLR6301
         """Attempt to cancel a set of futures.
 
         This method attempts to cancel the provided future-like objects.
 
         Args:
-            futures (Iterable[asyncio.Future]): An iterable of futures to cancel.
+            futures (Iterable[Awaitable]): An iterable of futures to cancel.
         """
         logger.debug('Cancelling futures')
         # convert to tuple in case the iterable is a generator
@@ -463,7 +459,8 @@ class CallableRunner:
         # (helps if "cancel" is called right after a task is created)
         await asyncio.sleep(0)
         for future in futures:
-            future.cancel()
+            if isinstance(future, (asyncio.Future, asyncio.Task)):
+                future.cancel()
         await asyncio.gather(*futures, return_exceptions=True)
 
     async def cancel_all(self) -> None:

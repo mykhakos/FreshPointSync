@@ -1,280 +1,157 @@
 import asyncio
-import sys
-from inspect import Parameter, Signature
-from typing import Literal, Union
-from unittest.mock import AsyncMock, MagicMock
+import functools
 
 import pytest
-from freshpointparser.models import Product
 
-from freshpointsync._update_publisher import UpdatePublisher
-
-
-def new_handler(
-    type_: Literal['sync', 'async'],
-) -> Union[AsyncMock, MagicMock]:
-    if type_ == 'sync':
-        handler = MagicMock()
-    elif type_ == 'async':
-        handler = AsyncMock()
-    else:
-        raise ValueError(f'Invalid handler type: {type_}')
-    params = [Parameter('context', Parameter.POSITIONAL_OR_KEYWORD)]
-    handler.__signature__ = Signature(parameters=params, return_annotation=None)
-    return handler
-
-
-@pytest.fixture(name='sync_handler', scope='function')
-def fixture_sync_handler() -> MagicMock:
-    return new_handler('sync')
-
-
-@pytest.fixture(name='async_handler', scope='function')
-def fixture_async_handler() -> AsyncMock:
-    return new_handler('async')
-
-
-def handler_callback(fut):
-    pass
-
-
-def test_subscribe_sync(sync_handler):
-    publisher = UpdatePublisher()
-    event = ProductUpdateEvent.PRODUCT_ADDED
-    publisher.subscribe(sync_handler, event)
-    assert event not in publisher.async_subscribers
-    handler_data = publisher.sync_subscribers[event][0]
-    assert sync_handler == handler_data.handler
-    assert handler_data.exec_params.run_safe is True
-    assert handler_data.exec_params.done_callback is None
-    sync_handler.assert_not_called()
-
-
-@pytest.mark.skipif(
-    sys.version_info < (3, 10),
-    reason=(
-        "'AsyncMock' is not recognized by 'inspect' as an asynchronous handler "
-        'on Python 3.9 and earlier'
-    ),
+from freshpointsync._callable_runner import run_safe
+from freshpointsync._update_publisher import (
+    UpdatePublisher,
+    is_async_consumer,
+    is_valid_consumer,
+    is_valid_filter,
+    is_valid_handler,
 )
-def test_subscribe_async(async_handler):
-    publisher = UpdatePublisher()
-    event = ProductUpdateEvent.PRODUCT_ADDED
-    publisher.subscribe(async_handler, event)
-    assert event not in publisher.sync_subscribers
-    handler_data = publisher.async_subscribers[event][0]
-    assert async_handler == handler_data.handler
-    assert handler_data.exec_params.run_safe is True
-    assert handler_data.exec_params.done_callback is None
-    async_handler.assert_not_called()
 
 
-def test_subscribe_with_params(sync_handler):
-    publisher = UpdatePublisher()
-    event = ProductUpdateEvent.PRODUCT_ADDED
-    publisher.subscribe(
-        sync_handler,
-        event,
-        run_safe=False,
-        handler_done_callback=handler_callback,
-    )
-    assert event not in publisher.async_subscribers
-    handler_data = publisher.sync_subscribers[event][0]
-    assert sync_handler == handler_data.handler
-    assert handler_data.exec_params.run_safe is False
-    assert handler_data.exec_params.done_callback is handler_callback
-    sync_handler.assert_not_called()
+def sync_handler(ctx):
+    return 'ok'
 
 
-def test_subscribe_same_twice(sync_handler):
-    publisher = UpdatePublisher()
-    publisher.subscribe(sync_handler, ProductUpdateEvent.PRODUCT_ADDED)
-    publisher.subscribe(sync_handler, ProductUpdateEvent.PRODUCT_ADDED)
-    subscribers = publisher.sync_subscribers[ProductUpdateEvent.PRODUCT_ADDED]
-    assert len([s for s in subscribers if s.handler is sync_handler]) == 1
+async def async_handler(ctx):
+    await asyncio.sleep(0)
+    return 'ok'
 
 
-def test_is_subscribed(sync_handler):
-    publisher = UpdatePublisher()
-    event = ProductUpdateEvent.PRODUCT_ADDED
-    assert publisher.is_subscribed(event=event) is False
-    publisher.subscribe(sync_handler, event)
-    assert publisher.is_subscribed(event=event) is True
+# region Helper validation functions
 
 
-def test_unsubscribe_subscribed(async_handler):
-    publisher = UpdatePublisher()
-    event = ProductUpdateEvent.PRODUCT_ADDED
-    assert event not in publisher.async_subscribers
-    assert publisher.is_subscribed(event=event) is False
-    publisher.subscribe(async_handler, ProductUpdateEvent.PRODUCT_ADDED)
-    assert publisher.is_subscribed(event=event) is True
-    publisher.unsubscribe(async_handler, ProductUpdateEvent.PRODUCT_ADDED)
-    assert publisher.is_subscribed(event=event) is False
+def test_is_async_consumer_basic():
+    assert is_async_consumer(async_handler) is True
+    assert is_async_consumer(sync_handler) is False
 
 
-def test_unsubscribe_unsubscribed(async_handler):
-    publisher = UpdatePublisher()
-    event = ProductUpdateEvent.PRODUCT_ADDED
-    assert event not in publisher.async_subscribers
-    assert publisher.is_subscribed(event=event) is False
-    publisher.unsubscribe(async_handler, ProductUpdateEvent.PRODUCT_ADDED)
-    assert ProductUpdateEvent.PRODUCT_ADDED not in publisher.async_subscribers
-    assert publisher.is_subscribed(event=event) is False
+def test_is_async_consumer_partial():
+    part = functools.partial(async_handler)
+    assert is_async_consumer(part) is True
+    part_sync = functools.partial(sync_handler)
+    assert is_async_consumer(part_sync) is False
 
 
-def test_unsubscribe_all():
-    publisher = UpdatePublisher()
-    event = ProductUpdateEvent.PRODUCT_ADDED
-    publisher.subscribe(new_handler('async'), event)
-    publisher.subscribe(new_handler('async'), event)
-    publisher.subscribe(new_handler('sync'), event)
-    publisher.subscribe(new_handler('sync'), event)
-    assert publisher.is_subscribed(event=event) is True
-    publisher.unsubscribe(None, event)
-    assert publisher.is_subscribed(event=event) is False
+def test_is_valid_consumer():
+    def one_arg(x):
+        return x
+
+    def two_args(x, y):
+        return None
+
+    assert is_valid_consumer(one_arg) is True
+    assert is_valid_consumer(two_args) is False
+    assert is_valid_consumer(len) is True
 
 
-def test_unsubscribe_all_empty():
-    publisher = UpdatePublisher()
-    event = ProductUpdateEvent.PRODUCT_ADDED
-    assert publisher.is_subscribed(event=event) is False
-    publisher.unsubscribe(None, event)
-    assert publisher.is_subscribed(event=event) is False
+def test_is_valid_handler_alias():
+    assert is_valid_handler(sync_handler) is True
+    assert is_valid_handler(async_handler) is True
 
 
-@pytest.mark.asyncio
-async def test_subscribe_and_post_and_unsubscribe(async_handler):  # noqa: RUF029
-    publisher = UpdatePublisher()
-    event = ProductUpdateEvent.PRODUCT_ADDED
-    publisher.subscribe(async_handler, event)
-    product_new = Product(id_=123, name='foo')
-    product_old = None
-    publisher.post(event, product_new, product_old)
-    async_handler.assert_called_once()
-    async_handler.reset_mock()
-    publisher.unsubscribe(async_handler, event)
-    publisher.post(event, product_new, product_old)
-    async_handler.assert_not_called()
+def test_is_valid_filter_annotations():
+    def flt(ctx) -> bool:
+        return True
+
+    def flt_no_anno(ctx):
+        return True
+
+    def flt_wrong(ctx) -> str:
+        return ''
+
+    assert is_valid_filter(flt) is True
+    assert is_valid_filter(flt_no_anno) is True
+    assert is_valid_filter(flt_wrong) is False
+
+
+# endregion Helper validation functions
+
+# region _get_consumers_meta
+
+
+def test_get_consumers_meta_none():
+    assert UpdatePublisher._get_consumers_meta(None) == {}
+
+
+def test_get_consumers_meta_single():
+    meta = UpdatePublisher._get_consumers_meta(sync_handler)
+    assert list(meta.keys()) == [sync_handler]
+    info = meta[sync_handler]
+    assert info.is_async is False
+    assert info.run_safe is False
+
+
+def test_get_consumers_meta_iterable_and_run_safe():
+    @run_safe
+    def safe_fn(ctx):
+        return None
+
+    meta = UpdatePublisher._get_consumers_meta([safe_fn, async_handler])
+    assert meta[safe_fn].run_safe is True
+    assert meta[async_handler].is_async is True
+
+
+# endregion _get_consumers_meta
+
+# region Subscribe, unsubscribe and post
 
 
 @pytest.mark.asyncio
-async def test_post_no_subcriptions():  # noqa: RUF029
-    publisher = UpdatePublisher()
-    publisher.post(ProductUpdateEvent.PRODUCT_ADDED, None, None)
+async def test_subscribe_unsubscribe_and_post():
+    pub = UpdatePublisher()
+    called = False
+
+    def flt(ctx) -> bool:
+        return True
+
+    def handler(ctx):
+        nonlocal called
+        called = True
+
+    pub.subscribe(handler, flt)
+    await pub.post(object())
+    assert called is True
+
+    called = False
+    pub.unsubscribe(handler)
+    await pub.post(object())
+    assert called is False
+    assert flt not in pub._filters
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('handler', [new_handler('async'), new_handler('sync')])
-async def test_subscribe_one_to_one_and_post_other(handler):  # noqa: RUF029
-    publisher = UpdatePublisher()
-    publisher.subscribe(handler, ProductUpdateEvent.PRODUCT_ADDED)
-    publisher.post(ProductUpdateEvent.PRODUCT_REMOVED, None, None)
-    handler.assert_not_called()
+async def test_post_filter_blocks_handler():
+    pub = UpdatePublisher()
+
+    def flt(ctx) -> bool:
+        return False
+
+    async def handler(ctx):  # noqa: RUF029
+        raise AssertionError('should not be called')
+
+    pub.subscribe(handler, flt)
+    await pub.post(object())
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('handler', [new_handler('async'), new_handler('sync')])
-async def test_subscribe_one_to_one_and_post_once(handler):  # noqa: RUF029
-    publisher = UpdatePublisher()
-    publisher.subscribe(handler, ProductUpdateEvent.PRODUCT_ADDED)
-    product_new = Product(id_=123, name='foo')
-    product_old = None
-    publisher.post(
-        ProductUpdateEvent.PRODUCT_ADDED, product_new, product_old, foo='bar'
-    )
-    context = ProductUpdateContext({
-        'foo': 'bar',
-        'event': ProductUpdateEvent.PRODUCT_ADDED,
-        'product_new': product_new,
-        'product_old': product_old,
-    })
-    handler.assert_called_once_with(context)
+async def test_post_run_once_and_await_for():
+    pub = UpdatePublisher()
+    runs = 0
+
+    async def handler(ctx):
+        nonlocal runs
+        await asyncio.sleep(0.01)
+        runs += 1
+
+    pub.subscribe(handler, run_once=True, await_for=True)
+    await pub.post(object())
+    await pub.post(object())
+    assert runs == 1
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize('handler', [new_handler('async'), new_handler('sync')])
-async def test_subscribe_one_to_one_and_post_twice(handler):
-    publisher = UpdatePublisher()
-    publisher.subscribe(handler, ProductUpdateEvent.PRODUCT_ADDED)
-    product_new = Product(id_=123, name='foo')
-    product_old = None
-    publisher.post(
-        ProductUpdateEvent.PRODUCT_ADDED, product_new, product_old, foo='bar'
-    )
-    publisher.post(
-        ProductUpdateEvent.PRODUCT_ADDED, product_old, product_new, bar='foo'
-    )
-    await asyncio.sleep(0.1)  # let the event loop run
-    assert handler.call_count == 2
-    last_context = ProductUpdateContext({
-        'bar': 'foo',
-        'event': ProductUpdateEvent.PRODUCT_ADDED,
-        'product_new': None,
-        'product_old': product_new,
-    })
-    handler.assert_called_with(last_context)
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize('handler', [new_handler('async'), new_handler('sync')])
-async def test_subscribe_one_to_multiple_and_post_each_once(handler):
-    publisher = UpdatePublisher()
-    publisher.subscribe(handler, ProductUpdateEvent.PRODUCT_ADDED)
-    publisher.subscribe(handler, ProductUpdateEvent.PRODUCT_REMOVED)
-    product_new = Product(id_=123, name='foo')
-    product_old = None
-    publisher.post(ProductUpdateEvent.PRODUCT_ADDED, product_new, product_old)
-    publisher.post(ProductUpdateEvent.PRODUCT_REMOVED, product_old, product_new)
-    await asyncio.sleep(0.1)  # let the event loop run
-    assert handler.call_count == 2
-
-
-@pytest.mark.asyncio
-async def test_subscribe_multiple_to_multiple_and_post_multiple():
-    publisher = UpdatePublisher()
-    handler_1 = new_handler('async')
-    handler_2 = new_handler('async')
-    handler_3 = new_handler('async')
-    handler_4 = new_handler('async')
-    publisher.subscribe(handler_1, ProductUpdateEvent.PRODUCT_UPDATED)
-    publisher.subscribe(handler_2, ProductUpdateEvent.PRICE_UPDATED)
-    publisher.subscribe(handler_3, ProductUpdateEvent.QUANTITY_UPDATED)
-    publisher.subscribe(handler_4, ProductUpdateEvent.OTHER_UPDATED)
-    product_new = Product(id_=123, name='foo', quantity=1, price_full=90, price_curr=90)
-    product_old = Product(id_=123, name='foo', quantity=2, price_full=80, price_curr=70)
-    events = [
-        ProductUpdateEvent.PRODUCT_UPDATED,
-        ProductUpdateEvent.PRICE_UPDATED,
-        ProductUpdateEvent.QUANTITY_UPDATED,
-    ]
-    for event in events:
-        publisher.post(
-            event=event,
-            product_new=product_new,
-            product_old=product_old,
-            arg='test',
-        )
-    await asyncio.sleep(0.1)  # let the event loop run
-    context_product_updated = ProductUpdateContext({
-        'arg': 'test',
-        'event': ProductUpdateEvent.PRODUCT_UPDATED,
-        'product_new': product_new,
-        'product_old': product_old,
-    })
-    context_price_updated = ProductUpdateContext({
-        'arg': 'test',
-        'event': ProductUpdateEvent.PRICE_UPDATED,
-        'product_new': product_new,
-        'product_old': product_old,
-    })
-    context_quantity_updated = ProductUpdateContext({
-        'arg': 'test',
-        'event': ProductUpdateEvent.QUANTITY_UPDATED,
-        'product_new': product_new,
-        'product_old': product_old,
-    })
-    handler_1.assert_called_once_with(context_product_updated)
-    handler_2.assert_called_once_with(context_price_updated)
-    handler_3.assert_called_once_with(context_quantity_updated)
-    handler_4.assert_not_called()
+# endregion Subscribe, unsubscribe and post

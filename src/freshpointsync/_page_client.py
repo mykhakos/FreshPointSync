@@ -140,7 +140,11 @@ class BasePageClient(ABC, Generic[TPageHTMLParser, TPage]):
         await_handlers: bool,
         **kwargs: Any,
     ) -> None:
+        page_url = self._construct_page_url()
         page_diff = page_new.item_diff(page_old)
+        if not page_diff:
+            logger.debug('No changes detected in page %s', page_url)
+            return
         page_update_context = PageUpdateContext(
             page_new=page_new,
             page_old=page_old,
@@ -149,9 +153,14 @@ class BasePageClient(ABC, Generic[TPageHTMLParser, TPage]):
         )
         tasks = [self._runner.run_async(self._publisher_page.post, page_update_context)]
         for item_id in page_diff:
+            item_diff = page_diff[item_id]
+            if not item_diff:
+                logger.debug(
+                    'No changes detected for item %s in page %s', item_id, page_url
+                )
+                continue
             item_new = page_new.items.get(item_id)
             item_old = page_old.items.get(item_id)
-            item_diff = page_diff[item_id]
             item_update_context = ItemUpdateContext(
                 item_new=item_new,
                 item_old=item_old,
@@ -200,7 +209,7 @@ class BasePageClient(ABC, Generic[TPageHTMLParser, TPage]):
         self, handler: Handler, filter_: Optional[Filter] = None
     ) -> None:
         """Subscribe to page update events."""
-        self._publisher_page.subscribe(handler, filter_)
+        self._publisher_page.subscribe(handler, filter_, await_for=True)
 
     def unsubscribe_from_page_update(self, handler: Handler) -> None:
         """Unsubscribe from page update events."""

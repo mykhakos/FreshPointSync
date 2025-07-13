@@ -25,7 +25,6 @@ from typing import (
 
 from freshpointparser.models import BaseItem, BasePage
 from freshpointparser.models.annotations import DiffType, ModelDiff, ModelDiffMapping
-from typing_extensions import Unpack
 
 from ._callable_runner import CallableRunner, is_run_safe
 
@@ -33,6 +32,11 @@ if sys.version_info >= (3, 10):
     from typing import TypeAlias, TypeGuard
 else:
     from typing_extensions import TypeAlias, TypeGuard
+
+if sys.version_info >= (3, 11):
+    from typing import Unpack
+else:
+    from typing_extensions import Unpack
 
 
 logger = logging.getLogger('freshpointsync.update')

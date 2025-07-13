@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from freshpointsync._page_client import ProductPageClient
-from freshpointsync._update_publisher import ItemUpdateContext, PageUpdateContext
+from freshpointsync.update._update import ItemUpdateContext, PageUpdateContext
 
 
 class TestPageClientHandlerInvocation:
@@ -138,7 +138,9 @@ class TestPageClientHandlerInvocation:
             handler_called = True
             handler_context = context
 
-        product_page_client_with_changes.subscribe_for_page_update(sync_handler)
+        product_page_client_with_changes.page_update.subscribe(
+            sync_handler, await_for=True
+        )
 
         # First update to establish baseline - no handlers should be called
         await product_page_client_with_changes.update(force=True)
@@ -163,7 +165,7 @@ class TestPageClientHandlerInvocation:
         def sync_item_handler(context: ItemUpdateContext) -> None:
             item_handler_calls.append(context)
 
-        product_page_client_with_changes.subscribe_for_item_update(sync_item_handler)
+        product_page_client_with_changes.item_update.subscribe(sync_item_handler)
 
         # First update to establish baseline
         await product_page_client_with_changes.update(force=True)
@@ -194,7 +196,9 @@ class TestPageClientHandlerInvocation:
             handler_called = True
             handler_context = context
 
-        product_page_client_with_changes.subscribe_for_page_update(async_handler)
+        product_page_client_with_changes.page_update.subscribe(
+            async_handler, await_for=True
+        )
 
         # First update to establish baseline
         await product_page_client_with_changes.update(force=True)
@@ -218,7 +222,9 @@ class TestPageClientHandlerInvocation:
             await asyncio.sleep(0.01)  # Simulate async work
             item_handler_calls.append(context)
 
-        product_page_client_with_changes.subscribe_for_item_update(async_item_handler)
+        product_page_client_with_changes.item_update.subscribe(
+            async_item_handler, await_for=True
+        )
 
         # First update to establish baseline
         await product_page_client_with_changes.update(force=True)
@@ -247,7 +253,7 @@ class TestPageClientHandlerInvocation:
             nonlocal handler_called
             handler_called = True
 
-        product_page_client_with_changes.subscribe_for_page_update(
+        product_page_client_with_changes.page_update.subscribe(
             sync_handler, sync_filter
         )
 
@@ -273,7 +279,9 @@ class TestPageClientHandlerInvocation:
             nonlocal handler_called
             handler_called = True
 
-        product_page_client.subscribe_for_page_update(sync_handler, sync_filter)
+        product_page_client.page_update.subscribe(
+            sync_handler, sync_filter, await_for=True
+        )
 
         # First update to establish baseline
         await product_page_client.update(force=True)
@@ -301,7 +309,7 @@ class TestPageClientHandlerInvocation:
         def sync_item_handler(context: ItemUpdateContext) -> None:
             item_handler_calls.append(context)
 
-        product_page_client_with_changes.subscribe_for_item_update(
+        product_page_client_with_changes.item_update.subscribe(
             sync_item_handler, sync_item_filter
         )
 
@@ -339,8 +347,8 @@ class TestPageClientHandlerInvocation:
             await asyncio.sleep(0.01)  # Simulate async work
             handler_called = True
 
-        product_page_client_with_changes.subscribe_for_page_update(
-            async_handler, async_filter
+        product_page_client_with_changes.page_update.subscribe(
+            async_handler, async_filter, await_for=True
         )
 
         # First update to establish baseline
@@ -367,7 +375,9 @@ class TestPageClientHandlerInvocation:
             await asyncio.sleep(0.01)  # Simulate async work
             handler_called = True
 
-        product_page_client.subscribe_for_page_update(async_handler, async_filter)
+        product_page_client.page_update.subscribe(
+            async_handler, async_filter, await_for=True
+        )
 
         # First update to establish baseline
         await product_page_client.update(force=True)
@@ -394,7 +404,7 @@ class TestPageClientHandlerInvocation:
             nonlocal handler_called
             handler_called = True
 
-        product_page_client_with_changes.subscribe_for_page_update(
+        product_page_client_with_changes.page_update.subscribe(
             sync_handler, async_filter
         )
 
@@ -424,8 +434,8 @@ class TestPageClientHandlerInvocation:
             await asyncio.sleep(0.01)
             handler_called = True
 
-        product_page_client_with_changes.subscribe_for_page_update(
-            async_handler, sync_filter
+        product_page_client_with_changes.page_update.subscribe(
+            async_handler, sync_filter, await_for=True
         )
 
         # First update to establish baseline
@@ -471,15 +481,11 @@ class TestPageClientHandlerInvocation:
             handler3_called = True
 
         # Subscribe handlers with different filters
-        product_page_client_with_changes.subscribe_for_page_update(
-            handler1, filter_allow
+        product_page_client_with_changes.page_update.subscribe(handler1, filter_allow)
+        product_page_client_with_changes.page_update.subscribe(
+            handler2, async_filter_allow, await_for=True
         )
-        product_page_client_with_changes.subscribe_for_page_update(
-            handler2, async_filter_allow
-        )
-        product_page_client_with_changes.subscribe_for_page_update(
-            handler3, filter_block
-        )
+        product_page_client_with_changes.page_update.subscribe(handler3, filter_block)
 
         # First update to establish baseline
         await product_page_client_with_changes.update(force=True)
@@ -513,9 +519,7 @@ class TestPageClientHandlerInvocation:
             handler_called = True
 
         # Subscribe with multiple filters
-        product_page_client.subscribe_for_page_update(
-            handler, [filter1, filter2, filter3]
-        )
+        product_page_client.page_update.subscribe(handler, [filter1, filter2, filter3])
 
         # First update to establish baseline
         await product_page_client.update(force=True)
@@ -540,8 +544,10 @@ class TestPageClientHandlerInvocation:
         def item_handler(context: ItemUpdateContext) -> None:
             received_contexts.append(('item', context))
 
-        product_page_client_with_changes.subscribe_for_page_update(page_handler)
-        product_page_client_with_changes.subscribe_for_item_update(item_handler)
+        product_page_client_with_changes.page_update.subscribe(
+            page_handler, await_for=True
+        )
+        product_page_client_with_changes.item_update.subscribe(item_handler)
 
         # Set some custom context
         product_page_client_with_changes.update_context['test_key'] = 'test_value'
@@ -596,7 +602,9 @@ class TestPageClientHandlerInvocation:
             nonlocal page_context
             page_context = context
 
-        product_page_client_with_changes.subscribe_for_page_update(page_handler)
+        product_page_client_with_changes.page_update.subscribe(
+            page_handler, await_for=True
+        )
 
         # First update to establish baseline
         await product_page_client_with_changes.update(force=True)
@@ -620,7 +628,7 @@ class TestPageClientHandlerInvocation:
         def item_handler(context: ItemUpdateContext) -> None:
             item_contexts.append(context)
 
-        product_page_client_with_changes.subscribe_for_item_update(item_handler)
+        product_page_client_with_changes.item_update.subscribe(item_handler)
 
         # First update to establish baseline
         await product_page_client_with_changes.update(force=True)
@@ -659,9 +667,15 @@ class TestPageClientHandlerInvocation:
             nonlocal handler2_called
             handler2_called = True
 
-        product_page_client_with_changes.subscribe_for_page_update(working_handler1)
-        product_page_client_with_changes.subscribe_for_page_update(failing_handler)
-        product_page_client_with_changes.subscribe_for_page_update(working_handler2)
+        product_page_client_with_changes.page_update.subscribe(
+            working_handler1, await_for=True
+        )
+        product_page_client_with_changes.page_update.subscribe(
+            failing_handler, await_for=True
+        )
+        product_page_client_with_changes.page_update.subscribe(
+            working_handler2, await_for=True
+        )
 
         # First update to establish baseline
         await product_page_client_with_changes.update(force=True)
@@ -687,7 +701,9 @@ class TestPageClientHandlerInvocation:
             nonlocal handler_called
             handler_called = True
 
-        product_page_client.subscribe_for_page_update(handler, failing_filter)
+        product_page_client.page_update.subscribe(
+            handler, failing_filter, await_for=True
+        )
 
         # First update to establish baseline
         await product_page_client.update(force=True)
@@ -710,8 +726,8 @@ class TestPageClientHandlerInvocation:
             nonlocal handler_called
             handler_called = True
 
-        product_page_client.subscribe_for_page_update(handler)
-        product_page_client.unsubscribe_from_page_update(handler)
+        product_page_client.page_update.subscribe(handler, await_for=True)
+        product_page_client.page_update.unsubscribe(handler)
 
         # First update to establish baseline
         await product_page_client.update(force=True)
@@ -740,7 +756,7 @@ class TestPageClientHandlerInvocation:
             nonlocal handler_called
             handler_called = True
 
-        product_page_client.subscribe_for_page_update(handler)
+        product_page_client.page_update.subscribe(handler, await_for=True)
 
         # # First update to establish baseline
         await product_page_client.update()
@@ -767,7 +783,7 @@ class TestPageClientHandlerInvocation:
             nonlocal handler_call_count
             handler_call_count += 1
 
-        product_page_client_with_changes.subscribe_for_page_update(handler)
+        product_page_client_with_changes.page_update.subscribe(handler, await_for=True)
 
         # First update should not trigger handler (no baseline)
         await product_page_client_with_changes.update(force=True)
@@ -788,7 +804,7 @@ class TestPageClientHandlerInvocation:
             nonlocal handler_call_count
             handler_call_count += 1
 
-        product_page_client.subscribe_for_page_update(handler)
+        product_page_client.page_update.subscribe(handler, await_for=True)
 
         # First update should not trigger handler (no baseline)
         await product_page_client.update(force=True)
@@ -818,8 +834,8 @@ class TestPageClientHandlerInvocation:
             await asyncio.sleep(0.1)  # Simulate slow async work
             handler_completed = True
 
-        product_page_client_with_multiple_changes.subscribe_for_page_update(
-            slow_handler
+        product_page_client_with_multiple_changes.page_update.subscribe(
+            slow_handler, await_for=True
         )
 
         # First update to establish baseline
@@ -850,7 +866,7 @@ class TestPageClientHandlerInvocation:
             nonlocal handler_called
             handler_called = True
 
-        product_page_client.subscribe_for_page_update(sync_handler)
+        product_page_client.page_update.subscribe(sync_handler, await_for=True)
 
         # First update to establish baseline
         await product_page_client.update(force=True)
@@ -872,7 +888,7 @@ class TestPageClientHandlerInvocation:
         def sync_item_handler(context: ItemUpdateContext) -> None:
             item_handler_calls.append(context)
 
-        product_page_client.subscribe_for_item_update(sync_item_handler)
+        product_page_client.item_update.subscribe(sync_item_handler)
 
         # First update to establish baseline
         await product_page_client.update(force=True)
@@ -898,7 +914,7 @@ class TestPageClientHandlerInvocation:
             await asyncio.sleep(0.01)  # Simulate async work
             item_handler_calls.append(context)
 
-        product_page_client.subscribe_for_item_update(async_item_handler)
+        product_page_client.item_update.subscribe(async_item_handler, await_for=True)
 
         # First update to establish baseline
         await product_page_client.update(force=True)

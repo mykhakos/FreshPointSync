@@ -26,7 +26,7 @@ from typing import (
 from freshpointparser.models import BaseItem, BasePage
 from freshpointparser.models.annotations import DiffType, ModelDiff, ModelDiffMapping
 
-from ._callable_runner import CallableRunner, is_run_safe
+from .._callable_runner import CallableRunner, is_run_safe
 
 if sys.version_info >= (3, 10):
     from typing import TypeAlias, TypeGuard
@@ -213,11 +213,14 @@ class HandlerExecParams(TypedDict, total=False):
     """
 
 
-class UpdatePublisher:
-    """A publisher and a subscription manager."""
+class UpdateConsumerRegistry:
+    """Registry for update consumers (handlers and filters).
+
+    This class manages subscriptions and unsubscriptions of handlers and filters,
+    allowing them to be executed based on the update context.
+    """
 
     def __init__(self) -> None:
-        self._runner = CallableRunner()
         self._filters: Dict[Filter, UpdateConsumerMeta] = {}
         self._handlers: Dict[Handler, UpdateConsumerMeta] = {}
         self._handler_exec_params: Dict[Handler, HandlerExecParams] = {}
@@ -278,10 +281,20 @@ class UpdatePublisher:
             if fltr not in fltrs_in_use:
                 self._filters.pop(fltr, None)
 
+
+class UpdatePublisher:
+    def __init__(
+        self,
+        registry: Optional[UpdateConsumerRegistry] = None,
+        runner: Optional[CallableRunner] = None,
+    ) -> None:
+        self._registry = registry or UpdateConsumerRegistry()
+        self._runner = runner or CallableRunner()
+
     async def post(self, update_context: object) -> None:
         fltr_futures: Dict[UpdateConsumer, asyncio.Future[Optional[bool]]] = {}
         fltr_results: Dict[UpdateConsumer, Optional[bool]] = {}
-        for fltr, meta in self._filters.items():
+        for fltr, meta in self._registry._filters.items():
             fut = self._runner.run(
                 fltr,
                 update_context,
@@ -292,10 +305,10 @@ class UpdatePublisher:
 
         hdlr_futures_to_await: List[asyncio.Future[Any]] = []
         hdlrs_to_unsubscribe = set()
-        for hdlr, meta in self._handlers.items():
+        for hdlr, meta in self._registry._handlers.items():
             fltrs_passed = True
 
-            fltrs = self._handlers_to_filters.get(hdlr, set())
+            fltrs = self._registry._handlers_to_filters.get(hdlr, set())
             for fltr in fltrs:
                 if fltr not in fltr_results:
                     fltr_results[fltr] = await fltr_futures.pop(fltr)
@@ -304,7 +317,7 @@ class UpdatePublisher:
                     break
 
             if fltrs_passed:
-                hdlr_exec_params = self._handler_exec_params[hdlr]
+                hdlr_exec_params = self._registry._handler_exec_params[hdlr]
                 hdlr_fut = self._runner.run(
                     hdlr,
                     update_context,
@@ -316,7 +329,7 @@ class UpdatePublisher:
                 if hdlr_exec_params.get('run_once', False):
                     hdlrs_to_unsubscribe.add(hdlr)
 
-        self.unsubscribe(hdlrs_to_unsubscribe)
+        self._registry.unsubscribe(hdlrs_to_unsubscribe)
 
         try:
             await self._runner.await_(hdlr_futures_to_await)

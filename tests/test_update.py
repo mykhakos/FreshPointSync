@@ -18,12 +18,12 @@ from freshpointsync.update._update import (
 
 
 def sync_handler(ctx):
-    return 'ok'
+    return "ok"
 
 
 async def async_handler(ctx):
     await asyncio.sleep(0)
-    return 'ok'
+    return "ok"
 
 
 # region Validation Functions Tests
@@ -65,7 +65,7 @@ class TestValidationFunctions:
             return True
 
         def flt_wrong(ctx) -> str:
-            return ''
+            return ""
 
         assert is_valid_filter(flt) is True
         assert is_valid_filter(flt_no_anno) is True
@@ -88,7 +88,7 @@ class TestUpdateConsumerRegistry:
         assert list(meta.keys()) == [sync_handler]
         info = meta[sync_handler]
         assert info.is_async is False
-        assert info.run_safe is False
+        assert info.run_safe is None  # Undecorated function should return None
 
     def test_get_consumers_meta_iterable_and_run_safe(self):
         @run_safe
@@ -210,7 +210,7 @@ class TestUpdateConsumerRegistry:
             return False
 
         def async_handler_test(ctx) -> None:
-            raise AssertionError('Handler should not be called')
+            raise AssertionError("Handler should not be called")
 
         registry.subscribe(async_handler_test, async_filter)
         await pub.post(object())  # Should not raise assertion
@@ -340,7 +340,7 @@ class TestUpdateConsumerRegistry:
         working_handler2_called = False
 
         def failing_handler(ctx) -> None:
-            raise RuntimeError('Handler failed')
+            raise RuntimeError("Handler failed")
 
         def working_handler1(ctx) -> None:
             nonlocal working_handler1_called
@@ -500,7 +500,7 @@ class TestItemUpdateContext:
         context = ItemUpdateContext(
             item_new=None,
             item_old=None,
-            item_diff={'type': DiffType.CREATED, 'diff': {}},
+            item_diff={"type": DiffType.CREATED, "diff": {}},
             context={},
         )
         assert context.is_item_created is True
@@ -512,7 +512,7 @@ class TestItemUpdateContext:
         context = ItemUpdateContext(
             item_new=None,
             item_old=None,
-            item_diff={'type': DiffType.DELETED, 'diff': {}},
+            item_diff={"type": DiffType.DELETED, "diff": {}},
             context={},
         )
         assert context.is_item_created is False
@@ -524,7 +524,7 @@ class TestItemUpdateContext:
         context = ItemUpdateContext(
             item_new=None,
             item_old=None,
-            item_diff={'type': DiffType.UPDATED, 'diff': {}},
+            item_diff={"type": DiffType.UPDATED, "diff": {}},
             context={},
         )
         assert context.is_item_created is False
@@ -540,7 +540,7 @@ class TestPageUpdateContext:
         page_new = None
         page_old = None
         page_diff = {}
-        context_data = {'key': 'value'}
+        context_data = {"key": "value"}
 
         context = PageUpdateContext(
             page_new=page_new,

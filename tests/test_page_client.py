@@ -102,7 +102,7 @@ class TestPageClientHandlerInvocation:
 
             async def mock_fetch(url, *, retries=None, **kwargs):
                 nonlocal call_count
-                await asyncio.sleep(0)  # Make it properly async
+                await asyncio.sleep(0.01)  # Make it properly async
 
                 current_price = prices[call_count % len(prices)]
                 modified_html = product_page_html.replace(

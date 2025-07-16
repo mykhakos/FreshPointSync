@@ -199,7 +199,7 @@ Handler = UpdateConsumer[Any]
 @dataclass
 class UpdateConsumerMeta:
     is_async: bool
-    run_safe: bool
+    run_safe: Optional[bool] = None
 
 
 class HandlerExecParams(TypedDict, total=False):
@@ -299,7 +299,7 @@ class UpdatePublisher:
                 fltr,
                 update_context,
                 run_async=meta.is_async,
-                run_safe=meta.run_safe,
+                run_safe=None,  # Use effective error handling mode
             )
             fltr_futures[fltr] = fut
 
@@ -322,7 +322,7 @@ class UpdatePublisher:
                     hdlr,
                     update_context,
                     run_async=meta.is_async,
-                    run_safe=meta.run_safe,
+                    run_safe=None,  # Use effective error handling mode
                 )
                 if hdlr_exec_params.get('await_for', False):
                     hdlr_futures_to_await.append(hdlr_fut)

@@ -30,10 +30,48 @@ P = ParamSpec('P')
 R = TypeVar('R')
 
 
+class CallableRunMark:
+    ATTR = ''  # This will be set in subclasses
+    """Attribute name used to mark functions with this run mark."""
+
+    @classmethod
+    def get_mark_value(cls, fn: Callable[P, R]) -> Any:
+        """Check if a function is decorated with a specific run mark.
+
+        Args:
+            fn (Callable[P, R]): The function to check.
+
+        Returns:
+            Any: The value of the mark if set, or None if not set.
+                This can be True, False, or any other value that indicates
+                the mark's state.
+        """
+        return getattr(fn, cls.ATTR, None)
+
+    @classmethod
+    def set_mark_value(cls, fn: Callable[P, R], value: Any) -> None:
+        """Mark a function with a specific run mark by setting the special attribute.
+
+        Args:
+            fn (Callable[P, R]): The function to mark.
+            value (Any): The value to set for the mark. This can be True,
+                False, or any other value that indicates the mark's state.
+        """
+        setattr(fn, cls.ATTR, value)
+
+
+class RunSafe(CallableRunMark):
+    ATTR = '_run_safe'
+
+
 def run_safe(fn: Callable[P, R]) -> Callable[P, R]:
     """Mark a function to be executed safely, meaning that any exceptions raised
     during its execution will be caught and logged, and the result will
     be set to None in case of an error.
+
+    This decorator overrides the session-wide error handling mode for this
+    specific function, forcing safe execution regardless of the CallableRunner's
+    global setting.
 
     Args:
         fn (Callable[P, R]): The function to be marked as safe.
@@ -41,20 +79,39 @@ def run_safe(fn: Callable[P, R]) -> Callable[P, R]:
     Returns:
         Callable[P, R]: The original function marked with a special attribute.
     """
-    setattr(fn, '_run_safe', True)  # noqa: B010
+    RunSafe.set_mark_value(fn, True)
     return fn
 
 
-def is_run_safe(fn: Callable[P, R]) -> bool:
-    """Check if a function is decorated with `@run_safe`.
+def run_unsafe(fn: Callable[P, R]) -> Callable[P, R]:
+    """Mark a function to be executed unsafely, meaning that any exceptions raised
+    during its execution will be propagated to the caller.
+
+    This decorator overrides the session-wide error handling mode for this
+    specific function, forcing unsafe execution regardless of the CallableRunner's
+    global setting.
+
+    Args:
+        fn (Callable[P, R]): The function to be marked as unsafe.
+
+    Returns:
+        Callable[P, R]: The original function marked with a special attribute.
+    """
+    RunSafe.set_mark_value(fn, False)
+    return fn
+
+
+def is_run_safe(fn: Callable[P, R]) -> Optional[bool]:
+    """Check if a function is decorated with `@run_safe` or `@run_unsafe`.
 
     Args:
         fn (Callable[P, R]): The function to check.
 
     Returns:
-        bool: True if the function is decorated with `@run_safe`, False otherwise.
+        Optional[bool]: True if the function is decorated with `@run_safe`,
+                       False if decorated with `@run_unsafe`, None if no decorator.
     """
-    return getattr(fn, '_run_safe', False)
+    return RunSafe.get_mark_value(fn)
 
 
 class CallableRunner:
@@ -64,8 +121,13 @@ class CallableRunner:
     await or cancel all running tasks.
     """
 
-    def __init__(self, executor: Optional[Executor] = None) -> None:
-        """Initialize a `CallableRunner` instance with an optional executor.
+    def __init__(
+        self,
+        executor: Optional[Executor] = None,
+        run_safe: bool = True,
+    ) -> None:
+        """Initialize a `CallableRunner` instance with an optional executor
+        and error handling mode.
 
         Args:
             executor (Optional[Executor]): A `concurrent.futures.Executor`
@@ -73,6 +135,10 @@ class CallableRunner:
                 a non-blocking manner. If None, a default executor is used.
                 For more information, see the asyncio event loop's
                 `run_in_executor` documentation. Defaults to None.
+            run_safe (bool): The default error handling mode for all callables executed
+                through this runner. If True, exceptions are caught and logged,
+                and the result is set to None in case of an error. If False, exceptions
+                are propagated and must be handled by the caller. Defaults to True.
         """
         self.tasks: set[asyncio.Task] = set()
         """A set that stores all running or pending tasks
@@ -86,6 +152,41 @@ class CallableRunner:
         """An optional `concurrent.futures.Executor` object to be used
         for running synchronous functions in the `run_sync` method.
         """
+        self.run_safe = run_safe
+        """The default error handling mode for callables executed through
+        this runner. Can be overridden per callable using decorators.
+        """
+
+    def _get_effective_run_safe(
+        self,
+        func: Callable[..., Any],
+        run_safe: Optional[bool] = None,
+    ) -> bool:
+        """Determine the effective error handling mode for a function.
+
+        The precedence is:
+        1. Explicit run_safe parameter (if not None)
+        2. Decorator value (@run_safe or @run_unsafe)
+        3. Session-wide default (self.run_safe)
+
+        Args:
+            func: The function to check for decorators.
+            run_safe: Explicit run_safe parameter.
+
+        Returns:
+            bool: The effective error handling mode.
+        """
+        # Explicit parameter takes precedence
+        if run_safe is not None:
+            return run_safe
+
+        # Check for decorator
+        decorator_value = is_run_safe(func)
+        if decorator_value is not None:
+            return decorator_value
+
+        # Fall back to session-wide default
+        return self.run_safe
 
     @staticmethod
     def _log_task_or_future_done(
@@ -201,7 +302,7 @@ class CallableRunner:
         self,
         func: Callable[..., Coroutine[Any, Any, R]],
         *func_args: Any,
-        run_safe: bool = True,
+        run_safe: Optional[bool] = None,
         done_callback: Optional[Callable[[asyncio.Task], Any]] = None,
     ) -> asyncio.Task:
         """Schedule a function that returns a coroutine to be run,
@@ -215,10 +316,12 @@ class CallableRunner:
             func (Callable[..., Coroutine[Any, Any, T]]): The coroutine
                 function to be run.
             *func_args (Any): The arguments to run the coroutine function with.
-            run_safe (bool): If True, the potential exceptions raised by
+            run_safe (Optional[bool]): If True, the potential exceptions raised by
                 the coroutine are caught and logged, and the result is set to
                 None in case of an error. If False, exceptions are propagated
-                and must be handled by the caller. Defaults to True.
+                and must be handled by the caller. If None, the effective error
+                handling mode is determined based on decorators and session-wide
+                settings. Defaults to None.
             done_callback (Optional[Callable[[asyncio.Task], Any]]):
                 An optional callback to be called when the task completes.
 
@@ -227,13 +330,16 @@ class CallableRunner:
                 the scheduled coroutine. The task can be awaited to obtain
                 the result of the coroutine function call or cancelled.
         """
+        # determine the effective error handling mode
+        run_safe_ = self._get_effective_run_safe(func, run_safe)
+
         func_name = self._get_func_name(func)
         logger.debug(
             'Scheduling task for "%s" (async, safe=%s)',
             func_name,
-            run_safe,
+            run_safe_,
         )
-        if run_safe:
+        if run_safe_:
             task = asyncio.create_task(self._run_async_safe(func, *func_args))
         else:
             task = asyncio.create_task(func(*func_args))
@@ -288,7 +394,7 @@ class CallableRunner:
         self,
         func: Callable[..., R],
         *func_args: Any,
-        run_safe: bool = True,
+        run_safe: Optional[bool] = None,
         run_blocking: bool = True,
         done_callback: Optional[Callable[[asyncio.Future], Any]] = None,
     ) -> asyncio.Future:
@@ -306,11 +412,12 @@ class CallableRunner:
         Args:
             func (Callable[..., T]): The synchronous function to be run.
             *func_args (Any): The arguments to run the function with.
-            run_safe (bool): If True, the potential exceptions raised by
+            run_safe (Optional[bool]): If True, the potential exceptions raised by
                 the synchronous function are caught and logged, and the result
                 is set to None in case of an error. If False, exceptions
-                are propagated and must be handled by the caller.
-                Defaults to True.
+                are propagated and must be handled by the caller. If None,
+                the effective error handling mode is determined based on
+                decorators and session-wide settings. Defaults to None.
             run_blocking (bool): If True, the synchronous function is executed
                 in a blocking manner, i.e., called directly without using an
                 executor. If False, the function is executed in a non-blocking
@@ -327,21 +434,23 @@ class CallableRunner:
                 the `concurrent.futures` documentation on cancellation of
                 the future objects).
         """
+        # determine the effective error handling mode
+        run_safe_ = self._get_effective_run_safe(func, run_safe)
         # get the event loop, prepare for scheduling the future
         name = self._get_func_name(func)
         loop = asyncio.get_running_loop()
-        future: asyncio.Future[Optional[R]]
         # schedule the future based on the blocking mode
+        future: asyncio.Future[Optional[R]]
         logger.debug(
             'Scheduling future for "%s" (sync, blocking=%s, safe=%s)',
             name,
             run_blocking,
-            run_safe,
+            run_safe_,
         )
         if run_blocking:
             future = loop.create_future()
             try:
-                if run_safe:
+                if run_safe_:
                     result = self._run_sync_safe(func, *func_args)
                 else:
                     result = func(*func_args)
@@ -349,7 +458,7 @@ class CallableRunner:
             except Exception as e:
                 future.set_exception(e)
         else:
-            if run_safe:
+            if run_safe_:
                 func_ = partial(self._run_sync_safe, func)
                 future = loop.run_in_executor(self.executor, func_, *func_args)
             else:
@@ -370,7 +479,7 @@ class CallableRunner:
         func: Union[Callable[..., Coroutine[Any, Any, R]], Callable[..., R]],
         *func_args: Any,
         run_async: bool,
-        run_safe: bool = True,
+        run_safe: Optional[bool] = None,
         run_blocking: bool = True,
         done_callback: Optional[Callable[[asyncio.Future], Any]] = None,
     ) -> asyncio.Future[Optional[R]]:
@@ -383,10 +492,12 @@ class CallableRunner:
             *func_args (Any): The arguments to run the function with.
             run_async (bool): If True, the function is run as an asynchronous
                 task. If False, the function is run as a synchronous future.
-            run_safe (bool): If True, the potential exceptions raised by
+            run_safe (Optional[bool]): If True, the potential exceptions raised by
                 the function are caught and logged, and the result is set to
                 None in case of an error. If False, exceptions are propagated
-                and must be handled by the caller. Defaults to True.
+                and must be handled by the caller. If None, the effective error
+                handling mode is determined based on decorators and session-wide
+                settings. Defaults to None.
             run_blocking (bool): If True, the synchronous function is executed
                 in a blocking manner. If False, it is executed in a non-blocking
                 manner using an executor. Defaults to True.

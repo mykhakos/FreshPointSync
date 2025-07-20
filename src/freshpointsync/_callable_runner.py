@@ -410,19 +410,12 @@ class CallableRunner:
         func: Callable[..., R],
         *func_args: Any,
         run_safe: Optional[bool] = None,
-        run_blocking: bool = True,
+        run_in_executor: bool = True,
         done_callback: Optional[Callable[[asyncio.Future], Any]] = None,
     ) -> asyncio.Future:
         """Schedule a synchronous function to be run in a blocking or
         a non-blocking manner, optionally with error handling and
         a completion callback.
-
-        This method is specifically designed for synchronous functions that
-        block. If `run_blocking` is set to True, the function is executed
-        directly without using an executor. If `run_blocking` is set to False,
-        the function is executed in a non-blocking manner using an executor,
-        allowing for concurrent execution of multiple functions. Providing
-        an asynchronous function will fail at runtime.
 
         Args:
             func (Callable[..., T]): The synchronous function to be run.
@@ -433,10 +426,10 @@ class CallableRunner:
                 are propagated and must be handled by the caller. If None,
                 the effective error handling mode is determined based on
                 decorators and session-wide settings. Defaults to None.
-            run_blocking (bool): If True, the synchronous function is executed
-                in a blocking manner, i.e., called directly without using an
-                executor. If False, the function is executed in a non-blocking
-                manner in a separate thread. Defaults to True.
+            run_in_executor (bool): If True, the synchronous function is executed
+                in a non-blocking manner in a separate thread (or process) using
+                an executor. If False, it is executed in a blocking manner, i.e.,
+                is called directly. Defaults to True.
             done_callback (Optional[Callable[[asyncio.Future], Any]]):
                 An optional callback to be called when the future completes.
 
@@ -455,26 +448,16 @@ class CallableRunner:
         # get the event loop, prepare for scheduling the future
         func_name = self._get_func_name(func)
         logger.debug(
-            'Scheduling future for "%s" (sync, blocking=%s, safe=%s)',
+            'Scheduling future for "%s" (sync, run_in_executor=%s, safe=%s)',
             func_name,
-            run_blocking,
+            run_in_executor,
             run_safe_,
         )
 
         # create a future based on the blocking mode, add callbacks
         loop = asyncio.get_running_loop()
         future: asyncio.Future[Optional[R]]
-        if run_blocking:
-            future = loop.create_future()
-            try:
-                if run_safe_:
-                    result = self._run_sync_safe(func, *func_args)
-                else:
-                    result = func(*func_args)
-                future.set_result(result)
-            except Exception as exc:
-                future.set_exception(exc)
-        else:
+        if run_in_executor:
             if run_safe_:
                 func_ = partial(self._run_sync_safe, func)
                 future = loop.run_in_executor(self.executor, func_, *func_args)
@@ -485,6 +468,16 @@ class CallableRunner:
             # already done by the time the future is returned.
             self.futures.add(future)
             future.add_done_callback(self.futures.discard)
+        else:
+            future = loop.create_future()
+            try:
+                if run_safe_:
+                    result = self._run_sync_safe(func, *func_args)
+                else:
+                    result = func(*func_args)
+                future.set_result(result)
+            except Exception as exc:
+                future.set_exception(exc)
         future.add_done_callback(
             lambda f: self._log_task_or_future_done(f, 'Future', func_name)
         )
@@ -501,7 +494,7 @@ class CallableRunner:
     def _validate_run_params(
         run_async: bool,
         run_safe: Optional[bool],
-        run_blocking: bool,
+        run_in_executor: bool,
         timeout: Optional[Union[int, float]] = None,
     ) -> None:
         """Validate the parameters for the `run` method.
@@ -514,16 +507,16 @@ class CallableRunner:
                 exceptions are propagated and must be handled by the caller.
                 If None, the effective error handling mode is determined based
                 on decorators and session-wide settings.
-            run_blocking (bool): If True, the synchronous function is executed
-                in a blocking manner. If False, it is executed in a non-blocking
-                manner using an executor.
+            run_in_executor (bool): If True, the synchronous function is executed
+                in a non-blocking manner using an executor. If False, it is executed
+                in a blocking manner.
             timeout (Optional[Union[int, float]]): If provided, the function
                 will be cancelled if it doesn't complete within this time (in seconds).
 
         Raises:
-            ValueError: If `run_async` is True and `run_blocking` is False.
+            ValueError: If `run_async` is True and `run_in_executor` is False.
         """
-        if run_async and run_blocking:
+        if run_async and run_in_executor:
             raise ValueError(
                 'Cannot run an asynchronous function in a blocking manner.'
             )
@@ -536,7 +529,7 @@ class CallableRunner:
         *func_args: Any,
         run_async: bool,
         run_safe: Optional[bool] = None,
-        run_blocking: bool = True,
+        run_in_executor: bool = True,
         done_callback: Optional[Callable[[asyncio.Future], Any]] = None,
         timeout: Optional[Union[int, float]] = None,
     ) -> asyncio.Future[Optional[R]]:
@@ -555,9 +548,10 @@ class CallableRunner:
                 and must be handled by the caller. If None, the effective error
                 handling mode is determined based on decorators and session-wide
                 settings. Defaults to None.
-            run_blocking (bool): If True, the synchronous function is executed
-                in a blocking manner. If False, it is executed in a non-blocking
-                manner using an executor. Defaults to True.
+            run_in_executor (bool): If True, the synchronous function is executed
+                in a non-blocking manner using an executor. If False, it is executed
+                in a blocking manner. Only applicable for synchronous functions.
+                Defaults to True.
             done_callback (Optional[Callable[[asyncio.Future], Any]]):
                 An optional callback to be called when the future completes.
             timeout (Optional[Union[int, float]]): If provided, the function
@@ -578,7 +572,7 @@ class CallableRunner:
         self._validate_run_params(
             run_async=run_async,
             run_safe=run_safe,
-            run_blocking=run_blocking,
+            run_in_executor=run_in_executor,
             timeout=timeout,
         )
         if run_async:
@@ -594,7 +588,7 @@ class CallableRunner:
                 cast(Callable[..., R], func),
                 *func_args,
                 run_safe=run_safe,
-                run_blocking=run_blocking,
+                run_in_executor=run_in_executor,
                 done_callback=done_callback,
             )
 

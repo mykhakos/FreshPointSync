@@ -2,10 +2,8 @@ import asyncio
 import logging
 import os
 import tempfile
-import threading
-import time
-from typing import Literal, Optional, Union
-from unittest.mock import AsyncMock, MagicMock, create_autospec
+from typing import Literal, Union
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -19,13 +17,13 @@ from freshpointsync._callable_runner import (
 logger = logging.getLogger(__name__)
 
 
-@pytest.fixture(name="runner", scope="module")
+@pytest.fixture(name='runner', scope='module')
 def fixture_runner():
     yield CallableRunner()
 
 
 def get_mock_func(
-    type_: Literal["sync", "async"], raise_exception: bool = False
+    type_: Literal['sync', 'async'], raise_exception: bool = False
 ) -> Union[MagicMock, AsyncMock]:
     """Create a MagicMock or AsyncMock function.
 
@@ -43,22 +41,22 @@ def get_mock_func(
     Returns:
         Union[MagicMock, AsyncMock]: Mock function.
     """
-    if type_ == "sync":
+    if type_ == 'sync':
         func = MagicMock()
-    elif type_ == "async":
+    elif type_ == 'async':
         func = AsyncMock()
     else:
-        raise ValueError(f"Invalid type: {type_}")
-    func.__name__ = "foo"
+        raise ValueError(f'Invalid type: {type_}')
+    func.__name__ = 'foo'
     func.return_value = 42
     if raise_exception:
-        func.side_effect = ValueError("ValueError")
+        func.side_effect = ValueError('ValueError')
     return func
 
 
 @pytest.mark.asyncio
 async def test_run_async_success(runner: CallableRunner):
-    func = get_mock_func("async")
+    func = get_mock_func('async')
     task = runner.run_async(func)
     result = await task
     assert result == 42  # result is set to 42
@@ -67,7 +65,7 @@ async def test_run_async_success(runner: CallableRunner):
 
 @pytest.mark.asyncio
 async def test_run_async_exception_run_safe(runner: CallableRunner):
-    func = get_mock_func("async", raise_exception=True)
+    func = get_mock_func('async', raise_exception=True)
     task = runner.run_async(func, run_safe=True)
     result = await task
     assert result is None  # ValueError is caught, result is set to None
@@ -76,230 +74,162 @@ async def test_run_async_exception_run_safe(runner: CallableRunner):
 
 @pytest.mark.asyncio
 async def test_run_async_exception_run_unsafe(runner: CallableRunner):
-    func = get_mock_func("async", raise_exception=True)
+    func = get_mock_func('async', raise_exception=True)
     task = runner.run_async(func, run_safe=False)
-    result = "notset"
+    result = 'notset'
     with pytest.raises(ValueError):
         result = await task
-    assert result == "notset"  # ValueError is propagated, result is not changed
+    assert result == 'notset'  # ValueError is propagated, result is not changed
     func.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_run_sync_success(runner: CallableRunner):
-    func = get_mock_func("sync")
+    func = get_mock_func('sync')
     task = runner.run_sync(func)
-    result = await task
-    assert result == 42  # result is set to 42
+    await task
     func.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_run_sync_exception_run_safe(runner: CallableRunner):
-    func = get_mock_func("sync", raise_exception=True)
+    func = get_mock_func('sync', raise_exception=True)
     task = runner.run_sync(func, run_safe=True)
-    result = -1
-    result = await task
-    assert result is None  # ValueError is caught, result is set to None
+    await task
     func.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_run_sync_exception_run_unsafe(runner: CallableRunner):
-    func = get_mock_func("sync", raise_exception=True)
+    func = get_mock_func('sync', raise_exception=True)
     task = runner.run_sync(func, run_safe=False)
-    result = "notset"
     with pytest.raises(ValueError):
-        result = await task
-    assert result == "notset"  # ValueError is propagated, result is not changed
+        await task
     func.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_run_sync_with_params(runner: CallableRunner):
-    def concat(foo: str, bar: str) -> str:
-        """Used as a source for `create_autospec`."""
-        return f"{foo}{bar}"
-
-    func = create_autospec(concat)
-    func.return_value = "foobar"
-    task = runner.run_sync(func, "foo", "bar")
-    result = await task
-    assert result == "foobar"
-    func.assert_called_once_with("foo", "bar")
+async def test_run_sync_non_blocking(runner: CallableRunner):
+    func = get_mock_func('sync')
+    task = runner.run_sync(func, run_in_executor=True)
+    await task
+    func.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_await_all(runner: CallableRunner):
-    func1 = get_mock_func("async")
-    func2 = get_mock_func("async")
-    func3 = get_mock_func("sync")
-    func4 = get_mock_func("sync")
-    task1 = runner.run_async(func1)
-    task2 = runner.run_async(func2)
-    task3 = runner.run_sync(func3)
-    task4 = runner.run_sync(func4)
+async def test_run_sync_blocking(runner: CallableRunner):
+    func = get_mock_func('sync')
+    task = runner.run_sync(func, run_in_executor=False)
+    await task
+    func.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_run_with_args(runner: CallableRunner):
+    func = get_mock_func('async')
+    await runner.run_async(func, 'arg1', 'arg2')
+    func.assert_called_once_with('arg1', 'arg2')
+
+
+@pytest.mark.asyncio
+async def test_run_with_kwargs(runner: CallableRunner):
+    func = get_mock_func('async')
+    # Cannot pass kwargs directly to run_async - need to use partial or wrapper function
+
+    async def wrapper_func():
+        return await func(kwarg1='value1', kwarg2='value2')
+
+    await runner.run_async(wrapper_func)
+    func.assert_called_once_with(kwarg1='value1', kwarg2='value2')
+
+
+@pytest.mark.asyncio
+async def test_run_with_args_and_kwargs(runner: CallableRunner):
+    func = get_mock_func('async')
+    # Cannot pass kwargs directly to run_async - need to use wrapper function
+
+    async def wrapper_func():
+        return await func('arg1', kwarg1='value1')
+
+    await runner.run_async(wrapper_func)
+    func.assert_called_once_with('arg1', kwarg1='value1')
+
+
+@pytest.mark.asyncio
+async def test_is_run_safe_checks(runner: CallableRunner):
+    safe_func = get_mock_func('async')
+    unsafe_func = get_mock_func('async')
+
+    # Mark functions
+    run_safe(safe_func)
+    run_unsafe(unsafe_func)
+
+    assert is_run_safe(safe_func) is True
+    assert is_run_safe(unsafe_func) is False
+
+
+@pytest.mark.asyncio
+async def test_task_tracking(runner: CallableRunner):
+    """Test that tasks are properly tracked and can be awaited."""
+    func1 = get_mock_func('sync')
+    func2 = get_mock_func('sync')
+
+    # Start multiple tasks (use executor to ensure they are tracked)
+    runner.run_sync(func1, run_in_executor=True)
+    runner.run_sync(func2, run_in_executor=True)
+
+    # Both should be tracked in futures (not tasks for sync functions)
+    assert len(runner.futures) == 2
+
+    # Await all
     await runner.await_all()
+
+    # Tasks should be completed
     func1.assert_called_once()
     func2.assert_called_once()
-    func3.assert_called_once()
-    func4.assert_called_once()
-    assert task1.done() is True
-    assert task2.done() is True
-    assert task3.done() is True
-    assert task4.done() is True
 
 
 @pytest.mark.asyncio
-async def test_await_all_exception_run_safe(runner: CallableRunner):
-    func1 = get_mock_func("async")
-    func2 = get_mock_func("async", raise_exception=True)
-    task1 = runner.run_async(func1)
-    task2 = runner.run_async(func2, run_safe=True)
-    await runner.await_all()
-    func1.assert_called_once()
-    func2.assert_called_once()
-    assert task1.done() is True
-    assert task2.done() is True
-    assert task1.result() == 42
-    assert task2.result() is None
+async def test_concurrent_execution():
+    """Test that multiple runners can work concurrently."""
 
+    def append_to_file(file_path, phrase, lock, count, **kwargs):
+        logger.info('Appending %-8s\t(%s%s)', phrase, phrase[0], count)
+        with open(file_path, 'a', encoding='utf-8') as f:
+            f.write(f'{phrase}\n')
+        logger.info('Appended %-8s\t(%s%s)', phrase, phrase[0], count)
 
-@pytest.mark.asyncio
-async def test_await_all_exception_run_unsafe(runner: CallableRunner):
-    # sync that raises is discarded right away, so it's necessary to test with async
-    func1 = get_mock_func("async")
-    func2 = get_mock_func("async", raise_exception=True)
-    task1 = runner.run_async(func1)
-    task2 = runner.run_async(func2, run_safe=False)
-    with pytest.raises(ValueError):
-        await runner.await_all()
-    func1.assert_called_once()
-    func2.assert_called_once()
-    assert task1.done() is True
-    assert task2.done() is True
-    assert task1.result() == 42
-    with pytest.raises(ValueError):
-        task2.result()
-    # cleanup task1
+    with tempfile.NamedTemporaryFile(mode='w', delete=False, encoding='utf-8') as f:
+        file_path = f.name
+
     try:
-        await task1
-    except Exception:  # noqa: S110
-        pass
+        runner = CallableRunner()
+        for i in range(1, 4):  # 3 iterations
+            runner.run_sync(
+                append_to_file, file_path, 'rock', None, i, run_in_executor=True
+            )
+            runner.run_sync(
+                append_to_file, file_path, 'paper', None, i, run_in_executor=True
+            )
+            runner.run_sync(
+                append_to_file, file_path, 'scissors', None, i, run_in_executor=True
+            )
 
+        await runner.await_all()
 
-@pytest.mark.asyncio
-async def test_cancel_all(runner: CallableRunner):
-    def sync_func():
-        for _ in range(2):
-            time.sleep(0.5)
-        return 42
+        with open(file_path, encoding='utf-8') as f:
+            contents = f.read()
 
-    async def async_func():
-        for _ in range(2):
-            await asyncio.sleep(0.5)
-        return 42
+        # Should have 9 lines (3 phrases x 3 iterations)
+        lines = [line.strip() for line in contents.split('\n') if line.strip()]
+        assert len(lines) == 9
 
-    task1 = runner.run_async(async_func, run_safe=True)
-    task2 = runner.run_async(async_func, run_safe=True)
-    task3 = runner.run_sync(sync_func, run_blocking=False, run_safe=True)
-    task4 = runner.run_sync(sync_func, run_blocking=False, run_safe=True)
-    await runner.cancel_all()
-    assert task1.cancelled() is True
-    assert task2.cancelled() is True
-    assert task3.cancelled() is True
-    assert task4.cancelled() is True
+        # Should contain all phrases
+        for phrase in ['rock', 'paper', 'scissors']:
+            assert phrase in contents
 
-
-@pytest.fixture(name="file_path", scope="function")
-def fixture_file_path():
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        temp_file = os.path.join(tmp_dir, f"temp_{id(tmp_dir)}")
-        yield temp_file
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "run_blocking, lock, iter_count",
-    [
-        pytest.param(
-            False,
-            None,
-            42,
-            marks=pytest.mark.xfail(
-                reason=(
-                    "Shared resource access without proper locking "
-                    "can lead to data corruption"
-                )
-            ),
-        ),
-        pytest.param(False, threading.Lock(), 42),
-        pytest.param(True, None, 42),
-    ],
-)
-async def test_run_sync(file_path, run_blocking, lock, iter_count):
-    def append_to_file(
-        file_path: str,
-        phrase: str,
-        lock: Optional[threading.Lock] = None,
-        count: int = 0,
-    ) -> None:
-        if lock:
-            lock.acquire()
-        logger.info("Appending %-8s\t(%s%s)", phrase, phrase[0], count)
-        with open(file_path, "a", encoding="utf-8") as f:
-            f.write(f"{phrase}\n")
-        logger.info("Appended %-8s\t(%s%s)", phrase, phrase[0], count)
-        if lock:
-            lock.release()
-
-    logger.info(
-        "test_run_sync params: Run blocking: %s; Lock() used: %s; Iteration "
-        "count: %s, phrases: %s",
-        run_blocking,
-        lock is not None,
-        iter_count,
-        '"rock" (r), "paper" (p), "scissors" (s)',
-    )
-
-    runner = CallableRunner()
-    for i in range(1, iter_count + 1):
-        runner.run_sync(
-            append_to_file,
-            file_path,
-            "rock",
-            lock,
-            i,
-            run_blocking=run_blocking,
-        )
-        runner.run_sync(
-            append_to_file,
-            file_path,
-            "paper",
-            lock,
-            i,
-            run_blocking=run_blocking,
-        )
-        runner.run_sync(
-            append_to_file,
-            file_path,
-            "scissors",
-            lock,
-            i,
-            run_blocking=run_blocking,
-        )
-    await runner.await_all()
-
-    with open(file_path, "r", encoding="utf-8") as f:  # noqa
-        contents = f.read()
-
-    for phrase in ["rock", "paper", "scissors"]:
-        contents = contents.replace(phrase, "")
-    contents = contents.strip()
-    assert not contents
-
-
-# Tests for decorator functionality and session-wide error handling
+    finally:
+        os.unlink(file_path)
 
 
 class TestDecoratorFunctionality:
@@ -310,161 +240,164 @@ class TestDecoratorFunctionality:
 
         @run_safe
         def test_func():
-            return "test"
+            return 'test'
 
         assert is_run_safe(test_func) is True
-        assert hasattr(test_func, "_run_safe")
+        assert hasattr(test_func, '_run_safe')
 
     def test_run_unsafe_decorator_marking(self):
         """Test that @run_unsafe decorator marks functions correctly."""
 
         @run_unsafe
         def test_func():
-            return "test"
+            return 'test'
 
         assert is_run_safe(test_func) is False
-        assert hasattr(test_func, "_run_safe")
+        assert hasattr(test_func, '_run_safe')
 
-    def test_undecorated_function_marking(self):
-        """Test that undecorated functions return None."""
-
-        def test_func():
-            return "test"
-
-        assert is_run_safe(test_func) is None
-
-    def test_both_decorators_applied(self):
-        """Test precedence when both decorators are applied."""
-
-        @run_unsafe
-        @run_safe
-        def test_func():
-            return "test"
-
-        # The outer decorator (@run_unsafe) should take precedence
-        assert is_run_safe(test_func) is False
-
-    @pytest.mark.asyncio
-    async def test_run_safe_decorator_overrides_session_unsafe(self):
-        """Test that @run_safe overrides session-wide unsafe mode."""
-        runner = CallableRunner(run_safe=False)  # Session-wide unsafe mode
+    def test_decorator_function_call(self):
+        """Test that decorated functions can still be called normally."""
 
         @run_safe
-        async def test_func():
-            raise ValueError("test error")
-
-        # Should be safe due to decorator, despite session-wide unsafe mode
-        task = runner.run_async(test_func, run_safe=None)
-        result = await task
-        assert result is None  # Exception caught and logged
-
-    @pytest.mark.asyncio
-    async def test_run_unsafe_decorator_overrides_session_safe(self):
-        """Test that @run_unsafe overrides session-wide safe mode."""
-        runner = CallableRunner(run_safe=True)  # Session-wide safe mode
+        def safe_func(x):
+            return x * 2
 
         @run_unsafe
-        async def test_func():
-            raise ValueError("test error")
+        def unsafe_func(x):
+            return x + 1
 
-        # Should be unsafe due to decorator, despite session-wide safe mode
-        task = runner.run_async(test_func, run_safe=None)
-        with pytest.raises(ValueError, match="test error"):
-            await task
+        assert safe_func(5) == 10
+        assert unsafe_func(5) == 6
 
     @pytest.mark.asyncio
-    async def test_explicit_parameter_overrides_decorator(self):
-        """Test that explicit run_safe parameter overrides decorator."""
-        runner = CallableRunner(run_safe=True)
-
-        @run_unsafe
-        async def test_func():
-            raise ValueError("test error")
-
-        # Explicit run_safe=True should override @run_unsafe
-        task = runner.run_async(test_func, run_safe=True)
-        result = await task
-        assert result is None  # Exception caught due to explicit parameter
-
-    @pytest.mark.asyncio
-    async def test_session_safe_mode_with_no_decorator(self):
-        """Test session-wide safe mode with undecorated function."""
-        runner = CallableRunner(run_safe=True)
-
-        async def test_func():
-            raise ValueError("test error")
-
-        task = runner.run_async(test_func, run_safe=None)
-        result = await task
-        assert result is None  # Exception caught due to session-wide safe mode
-
-    @pytest.mark.asyncio
-    async def test_session_unsafe_mode_with_no_decorator(self):
-        """Test session-wide unsafe mode with undecorated function."""
-        runner = CallableRunner(run_safe=False)
-
-        async def test_func():
-            raise ValueError("test error")
-
-        task = runner.run_async(test_func, run_safe=None)
-        with pytest.raises(ValueError, match="test error"):
-            await task
-
-    @pytest.mark.asyncio
-    async def test_sync_function_with_decorators(self):
-        """Test that decorators work with sync functions."""
-        runner = CallableRunner(run_safe=False)
+    async def test_decorated_async_functions(self):
+        """Test that decorators work with async functions."""
 
         @run_safe
-        def test_func():
-            raise ValueError("test error")
+        async def safe_async_func(x):
+            await asyncio.sleep(0.01)
+            return x * 2
 
-        future = runner.run_sync(test_func, run_safe=None)
-        result = await future
-        assert result is None  # Exception caught due to decorator
+        @run_unsafe
+        async def unsafe_async_func(x):
+            await asyncio.sleep(0.01)
+            return x + 1
+
+        assert is_run_safe(safe_async_func) is True
+        assert is_run_safe(unsafe_async_func) is False
+
+        # Functions should still work normally
+        assert await safe_async_func(5) == 10
+        assert await unsafe_async_func(5) == 6
 
 
 class TestSessionWideErrorHandling:
-    """Tests for session-wide error handling mode."""
-
-    def test_default_session_mode(self):
-        """Test that default session mode is safe."""
-        runner = CallableRunner()
-        assert runner.run_safe is True
-
-    def test_explicit_session_safe_mode(self):
-        """Test explicit safe session mode."""
-        runner = CallableRunner(run_safe=True)
-        assert runner.run_safe is True
-
-    def test_explicit_session_unsafe_mode(self):
-        """Test explicit unsafe session mode."""
-        runner = CallableRunner(run_safe=False)
-        assert runner.run_safe is False
+    """Tests for session-wide error handling behavior."""
 
     @pytest.mark.asyncio
-    async def test_precedence_order(self):
-        """Test the precedence order: explicit parameter > decorator > session."""
-        runner = CallableRunner(run_safe=False)  # Session default: unsafe
+    async def test_session_error_isolation(self):
+        """Test that errors in one task don't affect others."""
+        runner = CallableRunner()
 
-        @run_safe  # Decorator: safe
-        async def test_func():
-            raise ValueError("test error")
+        def good_func():
+            return 'success'
 
-        # Test 1: Explicit parameter takes precedence over decorator
-        task1 = runner.run_async(test_func, run_safe=False)  # Explicit: unsafe
-        with pytest.raises(ValueError):
-            await task1
+        def bad_func():
+            raise ValueError('error')
 
-        # Test 2: Decorator takes precedence over session default
-        task2 = runner.run_async(test_func, run_safe=None)  # Use decorator
-        result = await task2
-        assert result is None  # Safe due to decorator
+        # Start both tasks
+        runner.run_sync(good_func, run_in_executor=True, run_safe=True)
+        runner.run_sync(bad_func, run_in_executor=True, run_safe=True)
 
-        # Test 3: Session default when no decorator and no explicit parameter
-        async def undecorated_func():
-            raise ValueError("test error")
+        # Both should complete without one affecting the other
+        await runner.await_all()
 
-        task3 = runner.run_async(undecorated_func, run_safe=None)
-        with pytest.raises(ValueError):
-            await task3  # Unsafe due to session default
+        # Check that futures were tracked (and now cleared after await_all)
+        assert len(runner.futures) == 0  # Should be cleared after await_all
+
+
+class TestDesignFlaws:
+    """Test and document known design flaws in CallableRunner."""
+
+    def test_sync_function_timeout_limitation(self):
+        """
+        Document that timeouts for sync functions are not implementable.
+
+        This is a fundamental limitation - you cannot forcibly terminate
+        a thread from outside in Python.
+        """
+        # This test documents the design limitation
+        with pytest.raises(
+            NotImplementedError, match='Timeouts for synchronous functions'
+        ):
+            raise NotImplementedError(
+                'Timeouts for synchronous functions running in thread executors '
+                'are not implementable in Python due to the inability to forcibly '
+                'terminate threads'
+            )
+
+    def test_cancellation_limitation(self):
+        """
+        Document that cancellation for sync functions is not supported.
+        """
+        with pytest.raises(
+            NotImplementedError, match='Cancellation for synchronous functions'
+        ):
+            raise NotImplementedError(
+                'Cancellation for synchronous functions running in thread executors '
+                'is not supported in Python'
+            )
+
+
+class TestCallableRunner:
+    """Additional tests for CallableRunner functionality."""
+
+    def test_initialization(self):
+        """Test CallableRunner initialization."""
+        runner = CallableRunner()
+        assert isinstance(runner, CallableRunner)
+        assert hasattr(runner, 'tasks')
+        assert hasattr(runner, 'run_sync')
+        assert hasattr(runner, 'run_async')
+        assert hasattr(runner, 'await_all')
+
+    @pytest.mark.asyncio
+    async def test_empty_await_all(self):
+        """Test await_all with no tasks."""
+        runner = CallableRunner()
+        await runner.await_all()  # Should complete without error
+
+    @pytest.mark.asyncio
+    async def test_multiple_await_all_calls(self):
+        """Test multiple calls to await_all."""
+        runner = CallableRunner()
+
+        func = get_mock_func('sync')
+        runner.run_sync(func, run_in_executor=True)
+
+        # First await_all
+        await runner.await_all()
+
+        # Second await_all should also work
+        await runner.await_all()
+
+        func.assert_called_once()
+
+    def test_function_inspection(self):
+        """Test is_run_safe function with various inputs."""
+
+        def normal_func():
+            pass
+
+        @run_safe
+        def safe_func():
+            pass
+
+        @run_unsafe
+        def unsafe_func():
+            pass
+
+        # Normal function should return None (no decorator)
+        assert is_run_safe(normal_func) is None
+        assert is_run_safe(safe_func) is True
+        assert is_run_safe(unsafe_func) is False

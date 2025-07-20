@@ -157,36 +157,7 @@ class CallableRunner:
         this runner. Can be overridden per callable using decorators.
         """
 
-    def _get_effective_run_safe(
-        self,
-        func: Callable[..., Any],
-        run_safe: Optional[bool] = None,
-    ) -> bool:
-        """Determine the effective error handling mode for a function.
-
-        The precedence is:
-        1. Explicit run_safe parameter (if not None)
-        2. Decorator value (@run_safe or @run_unsafe)
-        3. Session-wide default (self.run_safe)
-
-        Args:
-            func: The function to check for decorators.
-            run_safe: Explicit run_safe parameter.
-
-        Returns:
-            bool: The effective error handling mode.
-        """
-        # Explicit parameter takes precedence
-        if run_safe is not None:
-            return run_safe
-
-        # Check for decorator
-        decorator_value = is_run_safe(func)
-        if decorator_value is not None:
-            return decorator_value
-
-        # Fall back to session-wide default
-        return self.run_safe
+    # region Common (private)
 
     @staticmethod
     def _log_task_or_future_done(
@@ -250,6 +221,10 @@ class CallableRunner:
         else:
             logger.warning('%s "%s" failed (%s)', type_, name, exc_type)
 
+    # endregion Common (private)
+
+    # region Async
+
     @staticmethod
     def _get_awaitable_name(awaitable: Awaitable) -> str:
         """Retrieve a human-readable name of an awaitable object.
@@ -272,29 +247,55 @@ class CallableRunner:
         except Exception:  # in case "inspect.iscoroutine" fails
             return repr(awaitable)
 
-    async def _run_async_safe(
-        self, func: Callable[..., Coroutine[Any, Any, R]], *args: Any
-    ) -> Optional[R]:
-        """Wrap an awaitable in a coroutine with added error handling that
-        catches and logs exceptions. Note that the `asyncio.CancelledError`
-        exceptions are re-raised to propagate cancellation.
+    @staticmethod
+    async def _run_async_unsafe(
+        coro: Coroutine[Any, Any, R],
+        timeout: Optional[float] = None,
+    ) -> R:
+        """Run a coroutine function with the given arguments and timeout.
 
         Args:
-            func (Callable[..., Coroutine[Any, Any, T]]): The coroutine
-                function to run.
+            coro (Coroutine[Any, Any, R]): The coroutine function to run.
+            timeout (Optional[float], optional): The timeout for the coroutine in
+                seconds. Defaults to None.
+
+        Returns:
+            R: The result of the coroutine function.
+        """
+        if timeout is not None:
+            return await asyncio.wait_for(coro, timeout=timeout)
+        else:
+            return await coro
+
+    async def _run_async_safe(
+        self,
+        coro: Coroutine[Any, Any, R],
+        timeout: Optional[float] = None,
+    ) -> Optional[R]:
+        """Wrap an awaitable in a coroutine with added error handling that
+        catches and logs exceptions, including timeout errors. Note that the
+        `asyncio.CancelledError` exceptions are re-raised to propagate cancellation.
+
+        Args:
+            coro (Coroutine[Any, Any, R]): The coroutine function to run.
             *args: Arguments to run the coroutine function with.
+            timeout: Optional timeout in seconds. If provided, the coroutine
+                will be cancelled if it doesn't complete within this time.
 
         Returns:
             Optional[T]: The result of the coroutine function if it completes
-                successfully, `None` if an exception occurs.
+                successfully, `None` if an exception occurs (including timeout).
         """
-        awaitable = func(*args)
         try:
-            return await awaitable
+            return await self._run_async_unsafe(coro, timeout=timeout)
         except asyncio.CancelledError:
             raise  # re-raise to ensure cancellation is propagated
+        except asyncio.TimeoutError:
+            func_name = self._get_awaitable_name(coro)
+            logger.warning('Task "%s" timed out after %.3f seconds', func_name, timeout)
+            return None
         except Exception as exc:
-            awaitable_name = self._get_awaitable_name(awaitable)
+            awaitable_name = self._get_awaitable_name(coro)
             self._log_caught_exception(exc, 'Task', awaitable_name)
             return None
 
@@ -304,6 +305,7 @@ class CallableRunner:
         *func_args: Any,
         run_safe: Optional[bool] = None,
         done_callback: Optional[Callable[[asyncio.Task], Any]] = None,
+        timeout: Optional[Union[int, float]] = None,
     ) -> asyncio.Task:
         """Schedule a function that returns a coroutine to be run,
         optionally with error handling and a completion callback.
@@ -324,6 +326,10 @@ class CallableRunner:
                 settings. Defaults to None.
             done_callback (Optional[Callable[[asyncio.Task], Any]]):
                 An optional callback to be called when the task completes.
+            timeout (Optional[Union[int, float]]): If provided, the coroutine
+                will be cancelled if it doesn't complete within this time (in seconds).
+                When run_safe=True, timeout errors are caught and logged, returning None.
+                When run_safe=False, timeout errors are propagated as asyncio.TimeoutError.
 
         Returns:
             asyncio.Task[Optional[T]]: An asyncio task object representing
@@ -331,18 +337,22 @@ class CallableRunner:
                 the result of the coroutine function call or cancelled.
         """
         # determine the effective error handling mode
-        run_safe_ = self._get_effective_run_safe(func, run_safe)
+        run_safe_ = run_safe if run_safe is not None else self.run_safe
 
         func_name = self._get_func_name(func)
         logger.debug(
-            'Scheduling task for "%s" (async, safe=%s)',
+            'Scheduling task for "%s" (async, safe=%s, timeout=%s)',
             func_name,
             run_safe_,
+            timeout,
         )
+
+        # create the appropriate coroutine based on safety and timeout settings
         if run_safe_:
-            task = asyncio.create_task(self._run_async_safe(func, *func_args))
+            coro = self._run_async_safe(coro=func(*func_args), timeout=timeout)
         else:
-            task = asyncio.create_task(func(*func_args))
+            coro = self._run_async_unsafe(coro=func(*func_args), timeout=timeout)
+        task = asyncio.create_task(coro)
         self.tasks.add(task)
         task.add_done_callback(self.tasks.discard)
         task.add_done_callback(
@@ -350,7 +360,12 @@ class CallableRunner:
         )
         if done_callback:
             task.add_done_callback(done_callback)
+
         return task
+
+    # endregion Async
+
+    # region Sync
 
     @staticmethod
     def _get_func_name(func: Callable) -> str:
@@ -370,16 +385,16 @@ class CallableRunner:
 
     def _run_sync_safe(self, func: Callable[..., R], *args: Any) -> Optional[R]:
         """Call a synchronous function with added error handling that
-        catches and logs exceptions. Note that the `asyncio.CancelledError`
-        exceptions are re-raised to propagate cancellation.
+        catches and logs exceptions. Note that the `asyncio.CancelledError` exceptions
+        are re-raised to propagate cancellation.
 
         Args:
             func (Callable[..., T]): The synchronous function to run.
-            *args: Arguments to run the function with.
+            *args (Any): Arguments to run the function with.
 
         Returns:
             Optional[T]: The result of the function if it completes
-                successfully, `None` if an exception occurs.
+                successfully, or `None` if an exception occurs.
         """
         try:
             return func(*args)
@@ -435,18 +450,20 @@ class CallableRunner:
                 the future objects).
         """
         # determine the effective error handling mode
-        run_safe_ = self._get_effective_run_safe(func, run_safe)
+        run_safe_ = run_safe if run_safe is not None else self.run_safe
+
         # get the event loop, prepare for scheduling the future
-        name = self._get_func_name(func)
-        loop = asyncio.get_running_loop()
-        # schedule the future based on the blocking mode
-        future: asyncio.Future[Optional[R]]
+        func_name = self._get_func_name(func)
         logger.debug(
             'Scheduling future for "%s" (sync, blocking=%s, safe=%s)',
-            name,
+            func_name,
             run_blocking,
             run_safe_,
         )
+
+        # create a future based on the blocking mode, add callbacks
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[Optional[R]]
         if run_blocking:
             future = loop.create_future()
             try:
@@ -455,24 +472,63 @@ class CallableRunner:
                 else:
                     result = func(*func_args)
                 future.set_result(result)
-            except Exception as e:
-                future.set_exception(e)
+            except Exception as exc:
+                future.set_exception(exc)
         else:
             if run_safe_:
                 func_ = partial(self._run_sync_safe, func)
                 future = loop.run_in_executor(self.executor, func_, *func_args)
             else:
                 future = loop.run_in_executor(self.executor, func, *func_args)
+            # adding the future to the tracking set only makes sense
+            # when running in a non-blocking manner in executor. Blocking calls are
+            # already done by the time the future is returned.
             self.futures.add(future)
             future.add_done_callback(self.futures.discard)
-        # add a callback to log the completion of the future
         future.add_done_callback(
-            lambda f: self._log_task_or_future_done(f, 'Future', name)
+            lambda f: self._log_task_or_future_done(f, 'Future', func_name)
         )
-        # add an optional callback to be called when the future completes
         if done_callback:
             future.add_done_callback(done_callback)
+
         return future
+
+    # endregion Sync
+
+    # region Common
+
+    @staticmethod
+    def _validate_run_params(
+        run_async: bool,
+        run_safe: Optional[bool],
+        run_blocking: bool,
+        timeout: Optional[Union[int, float]] = None,
+    ) -> None:
+        """Validate the parameters for the `run` method.
+
+        Args:
+            run_async (bool): If True, the function is run as an asynchronous task.
+                If False, the function is run as a synchronous future.
+            run_safe (Optional[bool]): If True, exceptions are caught and logged,
+                and the result is set to None in case of an error. If False,
+                exceptions are propagated and must be handled by the caller.
+                If None, the effective error handling mode is determined based
+                on decorators and session-wide settings.
+            run_blocking (bool): If True, the synchronous function is executed
+                in a blocking manner. If False, it is executed in a non-blocking
+                manner using an executor.
+            timeout (Optional[Union[int, float]]): If provided, the function
+                will be cancelled if it doesn't complete within this time (in seconds).
+
+        Raises:
+            ValueError: If `run_async` is True and `run_blocking` is False.
+        """
+        if run_async and run_blocking:
+            raise ValueError(
+                'Cannot run an asynchronous function in a blocking manner.'
+            )
+        if not run_async and timeout is not None:
+            raise ValueError('Timeout is not applicable for synchronous functions.')
 
     def run(
         self,
@@ -482,6 +538,7 @@ class CallableRunner:
         run_safe: Optional[bool] = None,
         run_blocking: bool = True,
         done_callback: Optional[Callable[[asyncio.Future], Any]] = None,
+        timeout: Optional[Union[int, float]] = None,
     ) -> asyncio.Future[Optional[R]]:
         """Run a callable function, either synchronous or asynchronous,
         with optional error handling and a completion callback.
@@ -503,6 +560,14 @@ class CallableRunner:
                 manner using an executor. Defaults to True.
             done_callback (Optional[Callable[[asyncio.Future], Any]]):
                 An optional callback to be called when the future completes.
+            timeout (Optional[Union[int, float]]): If provided, the function
+                will be cancelled if it doesn't complete within this time (in seconds).
+                Only applicable for asynchronous functions.
+
+        Raises:
+            ValueError: If the provided run flags are incompatible, such as
+                running an asynchronous function in a blocking manner or
+                providing a timeout for a synchronous function.
 
         Returns:
             asyncio.Future[Optional[R]]:
@@ -510,12 +575,19 @@ class CallableRunner:
                 execution of the function. The task or future can be awaited
                 to obtain the result of the function call or cancelled.
         """
+        self._validate_run_params(
+            run_async=run_async,
+            run_safe=run_safe,
+            run_blocking=run_blocking,
+            timeout=timeout,
+        )
         if run_async:
             return self.run_async(
                 cast(Callable[..., Coroutine[Any, Any, R]], func),
                 *func_args,
                 run_safe=run_safe,
                 done_callback=done_callback,
+                timeout=timeout,
             )
         else:
             return self.run_sync(
@@ -595,3 +667,5 @@ class CallableRunner:
         self.tasks.clear()
         await self.cancel(self.futures)
         self.futures.clear()
+
+    # endregion Common

@@ -116,7 +116,7 @@ preview = true
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = [
   "D", "S106", "ANN001", "ANN002",
-  "ANN003", "ANN201", "ANN202", "ANN204", "ANN205", "PLR6301", "PLC2701"
+  "ANN003", "ANN201", "ANN202", "ANN204", "ANN205", "PLR6301", "PLC2701", "RUF029"
 ]
 "docs/source/conf.py" = ["D100", "D103", "A001", "ANN201", "ANN001"]
 
@@ -145,3 +145,8 @@ warn_unreachable = true
 [[tool.mypy.overrides]]
 module = "tests.*"
 allow_untyped_defs = true
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore:The 'strip_cdata' option of HTMLParser.*:DeprecationWarning:bs4.builder._lxml",
+]

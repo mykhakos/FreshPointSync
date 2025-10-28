@@ -24,7 +24,7 @@ from typing import (
 )
 
 from freshpointparser.models import BaseItem, BasePage
-from freshpointparser.models.annotations import DiffType, ModelDiff, ModelDiffMapping
+from freshpointparser.models.types import DiffType, ModelDiff, ModelDiffMapping
 
 from .._callable_runner import CallableRunner, is_run_safe
 
@@ -199,7 +199,7 @@ Handler = UpdateConsumer[Any]
 @dataclass
 class UpdateConsumerMeta:
     is_async: bool
-    run_safe: Optional[bool] = None
+    run_safe: bool
 
 
 class HandlerExecParams(TypedDict, total=False):
@@ -237,7 +237,7 @@ class UpdateConsumerRegistry:
         return {
             consumer: UpdateConsumerMeta(
                 is_async=is_async_consumer(consumer),
-                run_safe=is_run_safe(consumer),
+                run_safe=is_run_safe(consumer),  # type: ignore[arg-type]
             )
             for consumer in consumers
         }
@@ -299,7 +299,7 @@ class UpdatePublisher:
                 fltr,
                 update_context,
                 run_async=meta.is_async,
-                run_safe=None,  # Use effective error handling mode
+                run_safe=meta.run_safe,
             )
             fltr_futures[fltr] = fut
 
@@ -322,7 +322,7 @@ class UpdatePublisher:
                     hdlr,
                     update_context,
                     run_async=meta.is_async,
-                    run_safe=None,  # Use effective error handling mode
+                    run_safe=meta.run_safe,
                 )
                 if hdlr_exec_params.get('await_for', False):
                     hdlr_futures_to_await.append(hdlr_fut)

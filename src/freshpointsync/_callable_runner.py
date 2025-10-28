@@ -31,11 +31,10 @@ R = TypeVar('R')
 
 
 class CallableRunMark:
-    ATTR = ''  # This will be set in subclasses
-    """Attribute name used to mark functions with this run mark."""
+    def __init__(self, attr: str) -> None:
+        self.attr = attr
 
-    @classmethod
-    def get_mark_value(cls, fn: Callable[P, R]) -> Any:
+    def get_mark_value(self, fn: Callable[P, R]) -> Any:
         """Check if a function is decorated with a specific run mark.
 
         Args:
@@ -46,10 +45,9 @@ class CallableRunMark:
                 This can be True, False, or any other value that indicates
                 the mark's state.
         """
-        return getattr(fn, cls.ATTR, None)
+        return getattr(fn, self.attr, None)
 
-    @classmethod
-    def set_mark_value(cls, fn: Callable[P, R], value: Any) -> None:
+    def set_mark_value(self, fn: Callable[P, R], value: Any) -> None:
         """Mark a function with a specific run mark by setting the special attribute.
 
         Args:
@@ -57,11 +55,10 @@ class CallableRunMark:
             value (Any): The value to set for the mark. This can be True,
                 False, or any other value that indicates the mark's state.
         """
-        setattr(fn, cls.ATTR, value)
+        setattr(fn, self.attr, value)
 
 
-class RunSafe(CallableRunMark):
-    ATTR = '_run_safe'
+run_safe_mark = CallableRunMark('_run_safe')
 
 
 def run_safe(fn: Callable[P, R]) -> Callable[P, R]:
@@ -79,7 +76,7 @@ def run_safe(fn: Callable[P, R]) -> Callable[P, R]:
     Returns:
         Callable[P, R]: The original function marked with a special attribute.
     """
-    RunSafe.set_mark_value(fn, True)
+    run_safe_mark.set_mark_value(fn, True)
     return fn
 
 
@@ -97,7 +94,7 @@ def run_unsafe(fn: Callable[P, R]) -> Callable[P, R]:
     Returns:
         Callable[P, R]: The original function marked with a special attribute.
     """
-    RunSafe.set_mark_value(fn, False)
+    run_safe_mark.set_mark_value(fn, False)
     return fn
 
 
@@ -111,7 +108,7 @@ def is_run_safe(fn: Callable[P, R]) -> Optional[bool]:
         Optional[bool]: True if the function is decorated with `@run_safe`,
                        False if decorated with `@run_unsafe`, None if no decorator.
     """
-    return RunSafe.get_mark_value(fn)
+    return run_safe_mark.get_mark_value(fn)
 
 
 class CallableRunner:

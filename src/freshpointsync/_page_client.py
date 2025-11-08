@@ -2,6 +2,7 @@ import asyncio
 import logging
 import sys
 from abc import ABC, abstractmethod
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from typing import (
     Any,
@@ -14,14 +15,21 @@ from typing import (
 )
 
 from freshpointparser import get_location_page_url, get_product_page_url
-from freshpointparser.models import BasePage, LocationPage, ProductPage
+from freshpointparser.models import (
+    BaseItem,
+    BasePage,
+    Location,
+    LocationPage,
+    Product,
+    ProductPage,
+)
 from freshpointparser.parsers import (
     BasePageHTMLParser,
     LocationPageHTMLParser,
     ProductPageHTMLParser,
 )
 
-from ._callable_runner import CallableRunner
+from ._callable_runner import AwaitableRunner as CallableRunner
 from ._html_client import PageHTMLClient
 from .update._update import (
     ItemUpdateContext,
@@ -42,6 +50,7 @@ logger = logging.getLogger('freshpointsync.page')
 
 TPageHTMLParser = TypeVar('TPageHTMLParser', bound=BasePageHTMLParser)
 TPage = TypeVar('TPage', bound=BasePage)
+TItem = TypeVar('TItem', bound=BaseItem)
 
 
 @dataclass
@@ -51,7 +60,7 @@ class ParseResult(Generic[TPage]):
     parsed: Optional[bool] = None
 
 
-class BasePageClient(ABC, Generic[TPageHTMLParser, TPage]):
+class BasePageClient(ABC, Generic[TPageHTMLParser, TPage, TItem]):
     """Product page object that provides methods for fetching, updating, and
     managing product data on the page. May be used as an asynchronous context
     manager.
@@ -60,13 +69,14 @@ class BasePageClient(ABC, Generic[TPageHTMLParser, TPage]):
     def __init__(
         self,
         parser: TPageHTMLParser,
+        enable_multiprocessing: bool = False,
         **client_kwargs: Any,
     ) -> None:
         self._parser = parser
         self._client = PageHTMLClient(**client_kwargs)
         self._update_context: dict[Any, Any] = {}
-        self._update_registry_page = UpdateConsumerRegistry()
-        self._update_registry_items = UpdateConsumerRegistry()
+        self._update_registry_page = UpdateConsumerRegistry[PageUpdateContext[TPage]]()
+        self._update_registry_items = UpdateConsumerRegistry[ItemUpdateContext[TItem]]()
         self._update_publisher_page = UpdatePublisher(
             registry=self._update_registry_page
         )
@@ -74,6 +84,10 @@ class BasePageClient(ABC, Generic[TPageHTMLParser, TPage]):
             registry=self._update_registry_items
         )
         self._runner = CallableRunner()
+        if enable_multiprocessing:
+            self._executor = ProcessPoolExecutor(max_workers=None)
+        else:
+            self._executor = None
 
     def __str__(self) -> str:
         return self._construct_page_url()
@@ -100,13 +114,12 @@ class BasePageClient(ABC, Generic[TPageHTMLParser, TPage]):
     async def _fetch_content(self, retries: int = 3, **kwargs: Any) -> str:
         """Fetch the HTML content of the product page."""
         url = self._construct_page_url()
-
-        async def _fetch_content() -> str:
-            return await self._client.fetch(url, retries=retries, **kwargs)
-
-        content = await self._runner.run_async(_fetch_content)
-        if content is None:
-            logger.warning('Failed to fetch content from page %s', url)
+        try:
+            content = await self._client.fetch(url, retries=retries, **kwargs)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning('Failed to fetch content from page %s: %s', url, exc)
             return ''
         return content
 
@@ -118,15 +131,18 @@ class BasePageClient(ABC, Generic[TPageHTMLParser, TPage]):
             page_old = self._parser.page
         else:
             page_old = None
-        parser = await self._runner.run_sync(  # parser == self._parser
-            self._parser.parse,
-            content,
-            force,
-            run_safe=False,  # run_safe=True crashes ProcessPoolExecutor
-        )
-        if parser is None:  # means something went wrong when running parser.parse()
+        loop = asyncio.get_running_loop()
+        try:
+            await loop.run_in_executor(
+                self._executor, self._parser.parse, content, force
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
             logger.warning(
-                'Failed to parse content from page %s', self._construct_page_url()
+                'Failed to parse content from page %s: %s',
+                self._construct_page_url(),
+                exc,
             )
             return ParseResult()
         if page_old is None:  # if the old page was not set, use the new one
@@ -156,9 +172,7 @@ class BasePageClient(ABC, Generic[TPageHTMLParser, TPage]):
             context={**self._update_context, **kwargs},
         )
         tasks = [
-            self._runner.run_async(
-                self._update_publisher_page.post, page_update_context
-            )
+            self._runner.run(self._update_publisher_page.post(page_update_context))
         ]
         for item_id in page_diff:
             item_diff = page_diff[item_id]
@@ -175,8 +189,8 @@ class BasePageClient(ABC, Generic[TPageHTMLParser, TPage]):
                 item_diff=item_diff,
                 context={**self._update_context, **kwargs},
             )
-            task = self._runner.run_async(
-                self._update_publisher_items.post, item_update_context
+            task = self._runner.run(
+                self._update_publisher_items.post(item_update_context)
             )
             tasks.append(task)
         if await_handlers:
@@ -193,12 +207,12 @@ class BasePageClient(ABC, Generic[TPageHTMLParser, TPage]):
         return self._update_context
 
     @property
-    def page_update(self) -> UpdateConsumerRegistry:
+    def page_update(self) -> UpdateConsumerRegistry[PageUpdateContext[TPage]]:
         """Registry for page update event handlers."""
         return self._update_registry_page
 
     @property
-    def item_update(self) -> UpdateConsumerRegistry:
+    def item_update(self) -> UpdateConsumerRegistry[ItemUpdateContext[TItem]]:
         """Registry for item update event handlers."""
         return self._update_registry_items
 
@@ -212,8 +226,8 @@ class BasePageClient(ABC, Generic[TPageHTMLParser, TPage]):
         else:
             await self.cancel_update_handlers()
         await self._client.close_session()
-        if self._runner.executor:
-            self._runner.executor.shutdown(wait=True)
+        # if self._runner.executor:
+        #     self._runner.executor.shutdown(wait=True)
 
     async def update(
         self,
@@ -296,7 +310,7 @@ class BasePageClient(ABC, Generic[TPageHTMLParser, TPage]):
         await self._runner.cancel_all()
 
 
-class ProductPageClient(BasePageClient[ProductPageHTMLParser, ProductPage]):
+class ProductPageClient(BasePageClient[ProductPageHTMLParser, ProductPage, Product]):
     """Product page client that provides methods for fetching, updating, and
     managing product data on the page. May be used as an asynchronous context
     manager.
@@ -305,26 +319,68 @@ class ProductPageClient(BasePageClient[ProductPageHTMLParser, ProductPage]):
     def __init__(
         self,
         location_id: Union[str, int],
+        enable_multiprocessing: bool = False,
         **client_kwargs: Any,
     ) -> None:
-        super().__init__(ProductPageHTMLParser(), **client_kwargs)
+        super().__init__(
+            ProductPageHTMLParser(),
+            enable_multiprocessing=enable_multiprocessing,
+            **client_kwargs,
+        )
         self._location_id = location_id
 
     def _construct_page_url(self) -> str:
         return get_product_page_url(self._location_id)
 
 
-class LocationPageClient(BasePageClient[LocationPageHTMLParser, LocationPage]):
+class LocationPageClient(
+    BasePageClient[LocationPageHTMLParser, LocationPage, Location]
+):
     """Location page client that provides methods for fetching, updating, and
     managing product data on the page. May be used as an asynchronous context
     manager.
     """
 
-    def __init__(self, **client_kwargs: Any) -> None:
-        super().__init__(LocationPageHTMLParser(), **client_kwargs)
+    def __init__(
+        self,
+        enable_multiprocessing: bool = False,
+        **client_kwargs: Any,
+    ) -> None:
+        super().__init__(
+            LocationPageHTMLParser(),
+            enable_multiprocessing=enable_multiprocessing,
+            **client_kwargs,
+        )
 
     def _construct_page_url(self) -> str:  # noqa: PLR6301
         return get_location_page_url()
+
+
+def group_pages(*pages: BasePageClient) -> ProcessPoolExecutor:
+    executor = ProcessPoolExecutor(max_workers=None)
+    for page in pages:
+        page._executor = executor
+    return executor
+
+
+class PageClientGroup:
+    def __init__(
+        self,
+        enable_multiprocessing: bool = False,
+        **client_kwargs: Any,
+    ) -> None:
+        self._client = PageHTMLClient(**client_kwargs)
+        if enable_multiprocessing:
+            self._executor = ProcessPoolExecutor(max_workers=None)
+        else:
+            self._executor = None
+        self._pages: Dict[str, BasePageClient] = {}
+
+    def add_page(self, page: BasePageClient) -> None:
+        page._client = self._client
+        page._executor = self._executor
+        page_url = page._construct_page_url()
+        self._pages[page_url] = page
 
 
 # class PageClientGroup:

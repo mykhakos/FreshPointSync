@@ -1,10 +1,10 @@
 """Annotations module for FreshPointSync update management."""
 
-from ._update import Filter, Handler, ItemUpdateContext, PageUpdateContext
+from ._update import ItemUpdateContext, PageUpdateContext, UpdateFilter, UpdateHandler
 
 __all__ = [
-    'Filter',
-    'Handler',
     'ItemUpdateContext',
     'PageUpdateContext',
+    'UpdateFilter',
+    'UpdateHandler',
 ]

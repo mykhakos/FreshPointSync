@@ -8,30 +8,28 @@ from typing import (
     Any,
     Awaitable,
     Callable,
-    Coroutine,
     Dict,
     Generic,
     Iterable,
     List,
     Optional,
+    Protocol,
     Set,
     TypedDict,
     TypeGuard,
     TypeVar,
     Union,
-    get_type_hints,
     overload,
 )
 
 from freshpointparser.models import BaseItem, BasePage
 from freshpointparser.models.types import DiffType, ModelDiff, ModelDiffMapping
 
-from .._callable_runner import CallableRunner, is_run_safe
+from .._callable_runner import AwaitableRunner
+from .._marks import is_run_safe
 
 if sys.version_info >= (3, 10):
-    from typing import TypeAlias, TypeGuard
-else:
-    from typing_extensions import TypeAlias, TypeGuard
+    pass
 
 if sys.version_info >= (3, 11):
     from typing import Unpack
@@ -46,83 +44,7 @@ _NO_DEFAULT = object()
 """Sentinel value for the ``default`` argument of ``getattr()``."""
 
 
-def is_async_consumer(
-    consumer: object,
-) -> TypeGuard[Callable[..., Awaitable[Any]]]:
-    while isinstance(consumer, functools.partial):
-        consumer = consumer.func
-    logger.info('Validating consumer "%r"', consumer)
-    try:
-        is_async = inspect.iscoroutinefunction(consumer)
-        if not is_async:
-            call_method = getattr(consumer, '__call__', None)  # noqa: B004
-            if call_method is not None:
-                is_async = inspect.iscoroutinefunction(call_method)
-        logger.info('Is asynchronous: %s', is_async)
-        return is_async
-    except Exception as e:
-        logger.warning('Failed to validate consumer %r: %s', consumer, e)
-        return False
-
-
-def is_valid_consumer(consumer: object) -> TypeGuard[Callable[[Any], Any]]:
-    """True if the object can be called with exactly one argument."""
-    while isinstance(consumer, functools.partial):
-        consumer = consumer.func
-    logger.info('Validating consumer "%r"', consumer)
-
-    if not callable(consumer):
-        logger.info('Not callable: %r', consumer)
-        return False
-    logger.info('Is callable')
-
-    try:
-        signature = inspect.signature(consumer)
-        try:
-            # Try binding one positional argument
-            signature.bind(object())
-            logger.info('Accepts one argument')
-            return True
-        except TypeError as e:
-            logger.info('Does not accept one argument: %s', e)
-            return False
-    except (ValueError, TypeError) as e:
-        logger.warning('Cannot inspect signature for %r: %s', consumer, e)
-        return False
-
-
-def is_valid_handler(handler: object) -> bool:
-    return is_valid_consumer(handler)
-
-
-def is_valid_filter(filter_: object) -> bool:
-    if not is_valid_consumer(filter_):
-        return False
-
-    try:
-        globalns = vars(sys.modules[filter_.__module__])
-        type_hints = get_type_hints(filter_, globalns=globalns)
-        return_type = type_hints.get('return', None)
-
-        if return_type is None:
-            logger.warning(
-                'Consumer %r has no return type annotation. '
-                'Assuming it returns a boolean.',
-                filter_,
-            )
-            return True
-
-        if return_type is bool:
-            logger.info('Returns bool')
-            return True
-
-        logger.info('Return type is not bool: %r', return_type)
-        return False
-
-    except Exception as e:
-        logger.warning('Failed to get return type for %r: %s', filter_, e)
-        return False
-
+# region UpdateContext
 
 T = TypeVar('T')
 TItem = TypeVar('TItem', bound=BaseItem)
@@ -188,18 +110,111 @@ class PageUpdateContext(Generic[TPage]):
     context: dict[str, Any]
 
 
-UpdateConsumerAsync: TypeAlias = Callable[[Any], Coroutine[Any, Any, T]]
-UpdateConsumerSync: TypeAlias = Callable[[Any], T]
-UpdateConsumer: TypeAlias = Union[UpdateConsumerAsync[T], UpdateConsumerSync[T]]
+# endregion
 
-Filter = UpdateConsumer[bool]
-Handler = UpdateConsumer[Any]
+# region UpdateConsumer and validation
+
+
+T = TypeVar('T')
+R = TypeVar('R')
+
+
+class SupportsBool(Protocol):
+    def __bool__(self) -> bool: ...
+
+
+UpdateConsumer = Callable[[T], Awaitable[R]]
+UpdateFilter = UpdateConsumer[T, SupportsBool]
+UpdateHandler = UpdateConsumer[T, Any]
+
+
+class InvalidConsumerError(TypeError):
+    pass
+
+
+class ConsumerValidationResult:
+    def __init__(self, is_valid: bool, reason: Optional[str] = None) -> None:
+        self.is_valid = is_valid
+        self.reason = reason
+
+    def __str__(self) -> str:
+        if self.is_valid:
+            return 'Valid consumer'
+        return f'Invalid consumer: {self.reason}'
+
+    def __bool__(self) -> bool:
+        return self.is_valid
+
+
+def get_consumer_name(consumer: UpdateConsumer) -> str:
+    if hasattr(consumer, '__name__'):
+        return consumer.__name__
+    if hasattr(consumer, '__class__'):
+        return consumer.__class__.__name__
+    return repr(consumer)
+
+
+def validate_consumer(consumer: object) -> ConsumerValidationResult:
+    """True if the object can be called with exactly one argument."""
+    while isinstance(consumer, functools.partial):
+        consumer = consumer.func
+
+    logger.info('Validating consumer "%r"', consumer)
+
+    if not callable(consumer):
+        return ConsumerValidationResult(
+            False,
+            reason=(
+                f"Consumer '{consumer}' of type '{type(consumer).__name__}' "
+                f'is not callable.'
+            ),
+        )
+
+    if not inspect.iscoroutinefunction(consumer) and not inspect.iscoroutinefunction(
+        getattr(consumer, '__call__', None)  # noqa: B004
+    ):
+        return ConsumerValidationResult(
+            False,
+            reason=f"Consumer '{consumer}' is not an async callable.",
+        )
+
+    if not hash(consumer):
+        return ConsumerValidationResult(
+            False,
+            reason=f"Consumer '{consumer}' is not hashable.",
+        )
+
+    try:
+        signature = inspect.signature(consumer)
+    except Exception as exc:
+        return ConsumerValidationResult(
+            False,
+            reason=f"Failed to inspect signature of consumer '{consumer}': {exc}",
+        )
+
+    try:
+        signature.bind(object())  # bind one positional argument
+        return ConsumerValidationResult(True)
+    except TypeError as err:
+        return ConsumerValidationResult(
+            False,
+            reason=(
+                f"Consumer '{consumer}' cannot be called with one positional argument: "
+                f'{err}'
+            ),
+        )
+
+
+def is_valid_consumer(consumer: object) -> TypeGuard[UpdateConsumer]:
+    return validate_consumer(consumer).is_valid
+
+
+# endregion
 
 
 @dataclass
 class UpdateConsumerMeta:
-    is_async: bool
-    run_safe: bool
+    run_safe: Optional[bool]
 
 
 class HandlerExecParams(TypedDict, total=False):
@@ -213,7 +228,7 @@ class HandlerExecParams(TypedDict, total=False):
     """
 
 
-class UpdateConsumerRegistry:
+class UpdateConsumerRegistry(Generic[T]):
     """Registry for update consumers (handlers and filters).
 
     This class manages subscriptions and unsubscriptions of handlers and filters,
@@ -221,51 +236,72 @@ class UpdateConsumerRegistry:
     """
 
     def __init__(self) -> None:
-        self._filters: Dict[Filter, UpdateConsumerMeta] = {}
-        self._handlers: Dict[Handler, UpdateConsumerMeta] = {}
-        self._handler_exec_params: Dict[Handler, HandlerExecParams] = {}
-        self._handlers_to_filters: Dict[Handler, Set[Filter]] = {}
+        self._filters: Dict[UpdateFilter[T], UpdateConsumerMeta] = {}
+        self._handlers: Dict[UpdateHandler[T], UpdateConsumerMeta] = {}
+        self._handler_exec_params: Dict[UpdateHandler[T], HandlerExecParams] = {}
+        self._handlers_to_filters: Dict[UpdateHandler[T], Set[UpdateFilter[T]]] = {}
+
+    @staticmethod
+    def _format_consumers(
+        consumers: Union[UpdateConsumer, Iterable[UpdateConsumer], None],
+    ) -> Set[UpdateConsumer]:
+        if not consumers:
+            return set()
+        if not isinstance(consumers, Iterable):
+            consumers = (consumers,)
+        return set(consumers)
 
     @staticmethod
     def _get_consumers_meta(
-        consumers: Union[UpdateConsumer, Iterable[UpdateConsumer], None],
+        consumers: Set[UpdateConsumer],
     ) -> Dict[UpdateConsumer, UpdateConsumerMeta]:
-        if not consumers:
-            return {}
-        if not isinstance(consumers, Iterable):
-            consumers = (consumers,)
         return {
-            consumer: UpdateConsumerMeta(
-                is_async=is_async_consumer(consumer),
-                run_safe=is_run_safe(consumer),  # type: ignore[arg-type]
-            )
+            consumer: UpdateConsumerMeta(run_safe=is_run_safe(consumer))
             for consumer in consumers
         }
 
     def subscribe(
         self,
-        handler: Union[Handler, Iterable[Handler]],
-        filter_: Union[Filter, Iterable[Filter], None] = None,
+        handler: Union[UpdateHandler[T], Iterable[UpdateHandler[T]]],
+        filter_: Union[UpdateFilter[T], Iterable[UpdateFilter[T]], None] = None,
         **kwargs: Unpack[HandlerExecParams],
     ) -> None:
-        handlers = self._get_consumers_meta(handler)
+        handlers = self._format_consumers(handler)
         if not handlers:  # nothing to subscribe
             return
-        filters = self._get_consumers_meta(filter_)
-        self._filters.update(filters)
-        for hdlr, hdlr_meta in handlers.items():
+        filters = self._format_consumers(filter_)
+
+        filters_meta = self._get_consumers_meta(filters)
+        for fltr, fltr_meta in filters_meta.items():
+            is_valid = validate_consumer(fltr)
+            if not is_valid:
+                fltr_name = get_consumer_name(fltr)
+                raise InvalidConsumerError(
+                    f"Cannot subscribe filter '{fltr_name}': {is_valid.reason}"
+                )
+            self._filters[fltr] = fltr_meta
+
+        handlers_meta = self._get_consumers_meta(handlers)
+        for hdlr, hdlr_meta in handlers_meta.items():
+            is_valid = validate_consumer(hdlr)
+            if not is_valid:
+                hdlr_name = get_consumer_name(hdlr)
+                raise InvalidConsumerError(
+                    f"Cannot subscribe handler '{hdlr_name}': {is_valid.reason}"
+                )
             self._handlers[hdlr] = hdlr_meta
             hdlr_fltrs = self._handlers_to_filters.setdefault(hdlr, set())
-            hdlr_fltrs.update(filters.keys())
+            hdlr_fltrs.update(filters_meta.keys())
             self._handler_exec_params[hdlr] = kwargs
 
     def unsubscribe(
         self,
-        handler: Union[Handler, Iterable[Handler]],
+        handler: Union[UpdateHandler[T], Iterable[UpdateHandler[T]]],
     ) -> None:
-        handlers = self._get_consumers_meta(handler)
+        handlers = self._format_consumers(handler)
         if not handlers:  # nothing to unsubscribe
             return
+
         for hdlr in handlers:
             self._handlers.pop(hdlr, None)
             self._handler_exec_params.pop(hdlr, None)
@@ -282,28 +318,23 @@ class UpdateConsumerRegistry:
                 self._filters.pop(fltr, None)
 
 
-class UpdatePublisher:
+class UpdatePublisher(Generic[T]):
     def __init__(
         self,
-        registry: Optional[UpdateConsumerRegistry] = None,
-        runner: Optional[CallableRunner] = None,
+        registry: Optional[UpdateConsumerRegistry[T]] = None,
+        runner: Optional[AwaitableRunner] = None,
     ) -> None:
-        self._registry = registry or UpdateConsumerRegistry()
-        self._runner = runner or CallableRunner()
+        self._registry = registry or UpdateConsumerRegistry[T]()
+        self._runner = runner or AwaitableRunner()
 
-    async def post(self, update_context: object) -> None:
-        fltr_futures: Dict[UpdateConsumer, asyncio.Future[Optional[bool]]] = {}
-        fltr_results: Dict[UpdateConsumer, Optional[bool]] = {}
+    async def post(self, update_context: T) -> None:
+        fltr_tasks: Dict[UpdateFilter, asyncio.Task[Optional[SupportsBool]]] = {}
+        fltr_results: Dict[UpdateFilter, Optional[SupportsBool]] = {}
         for fltr, meta in self._registry._filters.items():
-            fut = self._runner.run(
-                fltr,
-                update_context,
-                run_async=meta.is_async,
-                run_safe=meta.run_safe,
-            )
-            fltr_futures[fltr] = fut
+            task = self._runner.run(fltr(update_context), run_safe=meta.run_safe)
+            fltr_tasks[fltr] = task
 
-        hdlr_futures_to_await: List[asyncio.Future[Any]] = []
+        hdlr_tasks_to_await: List[asyncio.Task[Any]] = []
         hdlrs_to_unsubscribe = set()
         for hdlr, meta in self._registry._handlers.items():
             fltrs_passed = True
@@ -311,27 +342,22 @@ class UpdatePublisher:
             fltrs = self._registry._handlers_to_filters.get(hdlr, set())
             for fltr in fltrs:
                 if fltr not in fltr_results:
-                    fltr_results[fltr] = await fltr_futures.pop(fltr)
+                    fltr_results[fltr] = await fltr_tasks.pop(fltr)
                 if not fltr_results[fltr]:
                     fltrs_passed = False
                     break
 
             if fltrs_passed:
                 hdlr_exec_params = self._registry._handler_exec_params[hdlr]
-                hdlr_fut = self._runner.run(
-                    hdlr,
-                    update_context,
-                    run_async=meta.is_async,
-                    run_safe=meta.run_safe,
-                )
+                task = self._runner.run(hdlr(update_context), run_safe=meta.run_safe)
                 if hdlr_exec_params.get('await_for', False):
-                    hdlr_futures_to_await.append(hdlr_fut)
+                    hdlr_tasks_to_await.append(task)
                 if hdlr_exec_params.get('run_once', False):
                     hdlrs_to_unsubscribe.add(hdlr)
 
         self._registry.unsubscribe(hdlrs_to_unsubscribe)
 
         try:
-            await self._runner.await_(hdlr_futures_to_await)
+            await self._runner.await_(hdlr_tasks_to_await)
         finally:
-            await self._runner.cancel(fltr_futures.values())  # cancel unused filters
+            await self._runner.cancel(fltr_tasks.values())  # cancel unused filters

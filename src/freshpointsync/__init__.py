@@ -40,9 +40,15 @@ Start by creating a `ProductPage` instance with a location ID and calling
 Explore `freshpointsync` documentation for more details and examples.
 """
 
+import logging as _logging
+
 from ._page_client import LocationPage, ProductPage
+
+logger = _logging.getLogger('freshpointsync')
+"""Top-level logger for the FreshPointSync package."""
 
 __all__ = [
     'LocationPage',
     'ProductPage',
+    'logger',
 ]

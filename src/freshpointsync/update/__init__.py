@@ -1,11 +1,12 @@
 """Update management module for FreshPointSync."""
 
 from . import types
-from ._update import is_valid_filter, is_valid_handler, logger
+from ._update import InvalidConsumerError, is_valid_consumer, logger, validate_consumer
 
 __all__ = [
-    'is_valid_filter',
-    'is_valid_handler',
+    'InvalidConsumerError',
+    'is_valid_consumer',
     'logger',
     'types',
+    'validate_consumer',
 ]
